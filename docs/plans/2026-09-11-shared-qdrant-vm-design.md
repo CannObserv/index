@@ -73,6 +73,7 @@ for the citations. Four results move this design:
 | **D9** | **Nothing on any production path depends on `co-index`.** It is developer tooling. An outage degrades search on four VMs and stops no service. | Scopes D4's accepted exposure, D6's dropped backup, and the ACL below. Worth stating because a fifth always-on VM otherwise looks like a fifth thing that can take the cohort down. |
 | **D10** | **`co-index` checks in to notifier's dead-man's timer (#56)** on a systemd timer. | The second argument in #57 is that a per-VM install fails *silently*. A store whose absence is announced is the fix, and this repo already runs the mechanism. It makes `tag:index` a `src` in exactly one rule — the same amendment `tag:broker` took in broker#3. |
 | **D11** | **One host per `projectId`, enforced by convention.** | The index lock is `os.tmpdir()/socraticode-locks/<projectId>-<op>` — **host-local**. A shared Qdrant gives no shared lock, so two hosts indexing one project write the same collections concurrently with nothing stopping them. Natural under D8; written down so nobody later adds a helpful central re-index cron. |
+| **D13** | **A temporary `tag:notifier → tag:index:22` admin edge, and `--ssh` at join, both removed at the end of Phase 3.** | D1 says `tag:index` exposes no service port and the host is administered over public `ssh co-index.exe.xyz`. That is the steady state, and it is not reachable from a session on another exe.dev VM — exe.dev VMs are isolated from each other, which is the premise the tailnet exists to answer. Without a build-phase edge there is no host from which to run Phase 3. Replicator#88 D5 is the proven shape, including the trap it names: Tailscale SSH needs **both** an `acls` rule and an `ssh` block — without the network rule the node never appears in the peer's netmap and the `ssh` rule is never consulted, which presents as a DNS failure rather than a permission denial. |
 | **D12** | **`QDRANT_COLLECTION_PREFIX` is never set, and `SOCRATICODE_BRANCH_AWARE` is never `"true"`.** Asserted by a test, like `NOTIFIER_BIND_HOST`. | The prefix is prepended to the global `socraticode_metadata` collection too, so one VM setting it splits the cohort namespace silently. Branch-awareness appends the branch to the project id: a fresh six-collection set per branch. Both are the same failure class — a widening or a fragmenting that every health check still calls green. |
 
 ## Design
@@ -137,13 +138,21 @@ thing it buys.
       "dst": ["tag:index:6333,11434"] },
     // D10: co-index checks in to notifier's dead-man's timer. Port 9000 only,
     // production key — same shape as tag:broker's rule, and the same reason.
-    { "action": "accept", "src": ["tag:index"], "dst": ["tag:notifier:9000"] }
+    { "action": "accept", "src": ["tag:index"], "dst": ["tag:notifier:9000"] },
+    // D13: BUILD PHASE ONLY. Removed at the end of Phase 3, with the ssh block.
+    { "action": "accept", "src": ["tag:notifier"], "dst": ["tag:index:22"] }
+  ],
+  "ssh": [
+    // D13: build phase only. Without the acls rule above this is never consulted.
+    { "action": "accept", "src": ["tag:notifier", "autogroup:member"],
+      "dst": ["tag:index"], "users": ["exedev", "root"] }
   ]
 }
 ```
 
-`tag:index` opens no port 22: administer over the public `ssh co-index.exe.xyz`,
-as this host does. A peer is visible only through an `acls` rule — an `ssh`
+**In the steady state** `tag:index` opens no port 22: administer over the public
+`ssh co-index.exe.xyz`, as this host does. The `:22` edge and the `ssh` block
+above are D13's build-phase scaffolding and come out at the end of Phase 3. A peer is visible only through an `acls` rule — an `ssh`
 block alone leaves the node absent from the netmap, where a missing rule looks
 like a DNS failure rather than a permission denial (archiver#193, replicator#88).
 
@@ -216,10 +225,16 @@ is ever built.
    workspace-trust caveat above. The block itself lands in Phase 4, not here:
    pointing this repo at `http://index:6333` before that host exists would
    commit a claim that is false for as long as Phase 2 takes.
-5. Teach `socraticode-health.sh` three things: a missing `node` is still a
-   defect; a missing Docker container is **expected** under `QDRANT_MODE=external`
-   and must stop being reported; and configured-vs-resolved `linkedProjects`
-   is a daily line, so D8's silent skip is announced.
+5. ~~Teach `socraticode-health.sh` three things.~~ **Two, and both filed
+   upstream** as [gregoryfoster/skills#281](https://github.com/gregoryfoster/skills/issues/281):
+   past the manifest gate a missing `node` is a finding rather than a silent
+   skip, and configured-vs-resolved `linkedProjects` is a daily line so D8's
+   silent skip is announced. **The third was wrong and is not filed** —
+   `codebase_health` already branches on `QDRANT_MODE` (`manage-tools.js:79`),
+   reporting an endpoint and "Docker is not required for the vector database"
+   rather than a stopped container, and the hook forwards that unchanged. An
+   external-mode host is already handled end to end. Carried as a gap until
+   upstream ships; no local override.
 
 ### Phase 2 — provision `co-index`
 

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# co-index first-boot setup — joins the cannobserv.org.github tailnet as `index`.
+#
+# Provisioned through `new --setup-script`; exe.dev runs it once, as root's
+# child, on first boot. It does ONE thing: get the node onto the tailnet with
+# the right tag. Everything else (Docker, Qdrant, Ollama, the volume, the
+# check-in timer) is Phase 3, over the D13 admin edge, where a failure is
+# visible and fixable instead of buried in a first-boot log.
+#
+# __TAILSCALE_KEY__ is substituted at provision time. The rendered file is a
+# secret until the trap below shreds it: never write it to the repo, and never
+# pass it on a `tailscale ssh` command line — argv lands in the node's journal
+# (CannObserv/replicator#88).
+set -euo pipefail
+
+# A path exedev can write. /var/log aborted notifier's setup script (#43).
+exec >>"$HOME/setup.log" 2>&1
+
+KEY="$HOME/.ts-authkey"
+umask 077
+
+# The shred sits in a trap, set BEFORE the key is written, not at the end of the
+# script. Under `set -e` archiver's script aborted at `tailscale up` and its key
+# survived on disk and in the journal. A trap is unconditional; a trailing line
+# is not.
+trap 'shred -u "$KEY" 2>/dev/null || true; sudo shred -u /exe.dev/setup 2>/dev/null || true' EXIT
+
+printf '%s' '__TAILSCALE_KEY__' >"$KEY"
+
+# exeuntu ships tailscaled. No `curl | sh`.
+sudo systemctl enable --now tailscaled
+
+# --hostname=index, not co-index: the tailnet name stays bare so every QDRANT_URL
+# and ACL rule reads naturally. `index` is what MagicDNS serves.
+#
+# --ssh is D13 build-phase scaffolding and comes out at the end of Phase 3,
+# along with the tag:notifier -> tag:index:22 rule. The steady state opens no
+# port 22 on the tailnet.
+#
+# The key is single-tag and pre-approved. Tags bind at device REGISTRATION —
+# `tailscale up --reset` does not retag, and changing one later costs a logout
+# plus a fresh up (notifier#43 F1). Get it right here or not at all.
+sudo tailscale up \
+  --auth-key=file:"$KEY" \
+  --hostname=index \
+  --ssh \
+  --accept-dns=true
+
+# Never `set-region`. pdx is not among its values, so any call moves this node
+# out of the region the rest of the cohort is in (D1).
+
+echo "setup-done"
