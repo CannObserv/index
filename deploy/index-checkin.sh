@@ -48,7 +48,13 @@ fi
 free_pct=$(df --output=pcent / | tail -1 | tr -dc '0-9')
 [ "$free_pct" -lt 90 ] || add disk root "root filesystem ${free_pct}% used"
 
-count=$(printf '%s' "$findings" | grep -o '"check"' | wc -l | tr -d ' ')
+# `|| true` is load-bearing, not defensive noise. Under `set -o pipefail` a
+# grep that matches nothing fails the whole pipeline and `set -e` kills the
+# script -- and "matches nothing" is precisely the HEALTHY case. Without this
+# the check-in succeeded only when there was something to complain about, so a
+# perfectly well host would have gone silent and tripped its own dead-man's
+# timer. Found by running this script for the first time on a green host.
+count=$(printf '%s' "$findings" | grep -c '"check"' || true)
 if [ "$count" -eq 0 ]; then status=ok; else status=alert; fi
 
 payload=$(printf '{"status":"%s","variables":{"source":"co-index","finding_count":%s,"findings":[%s]}}' \
@@ -59,7 +65,7 @@ printf '%s' "$payload" | curl -sS --max-time 20 -X POST \
   -H "X-API-Key: ${NOTIFIER_API_KEY}" \
   -H 'Content-Type: application/json' \
   --data-binary @- \
-  -o /tmp/index-checkin-resp.json -w 'index-checkin: %{http_code} status=%s\n'
+  -o /tmp/index-checkin-resp.json -w "index-checkin: %{http_code} sent=${status} findings=${count}\n"
 
 python3 -c "import json;d=json.load(open('/tmp/index-checkin-resp.json'));print('next_deadline_at',d.get('next_deadline_at'))" 2>/dev/null || true
 rm -f /tmp/index-checkin-resp.json
