@@ -85,16 +85,27 @@ this node out of the region the rest of the cohort is in.
 | `setup.sh.template` | first-boot script; `__TAILSCALE_KEY__` substituted at provision time. Joins the tailnet and nothing else. |
 | `ollama-slim/Dockerfile` | CPU-only Ollama, 221 MB against 9.19 GB, embeddings bitwise identical to the stock image (CannObserv/replicator#88). |
 
-**The `ollama/ollama:latest` tag on the slim image is load-bearing.**
-`ensureOllamaContainerReady` guards on presence only —
+**On `co-index` the image keeps its own tag, `socraticode/ollama-slim:latest`.**
+replicator#88 records that the `ollama/ollama:latest` tag is load-bearing,
+because `ensureOllamaContainerReady` guards on presence alone —
 
 ```js
 const { stdout } = await run("docker", ["images", "--format", "{{.Repository}}:{{.Tag}}", OLLAMA_IMAGE]);
 return stdout.includes("ollama/ollama");
 ```
 
-— so build it, retag it `ollama/ollama:latest`, and leave it there. Untag it, or
-run `docker image prune -a`, and the next index silently pulls 9.19 GB again.
+— so an untag, or a `docker image prune -a`, silently re-pulls 9.19 GB. That is
+true on a host where **SocratiCode** manages the container. It does not apply
+here: systemd owns this container and `ollama-run.sh` names the image
+explicitly, and every cohort client runs `OLLAMA_MODE=external` and manages no
+container at all. Keeping our own tag stops a locally-built image from
+impersonating upstream's.
+
+**Measured on this host, 2026-09-11**, reproducing replicator#88 independently:
+9.18 GB → **221 MB**, and against the same volume, model and prompt the two
+images' embeddings are **bitwise identical** (`max abs diff 0.0`, cosine 1.0).
+So the slim image is not a backend change and fragments nothing under D7.
+Removing the stock image and pruning reclaimed **8.8 GB** (14 G → 5.2 G used).
 
 ## Not here yet
 

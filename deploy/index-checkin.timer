@@ -1,0 +1,11 @@
+[Unit]
+Description=co-index check-in every 10 minutes (#57 D10)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+AccuracySec=30s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,7 @@
+[Unit]
+Description=Report co-index liveness to notifier's dead-man's timer (#57 D10)
+After=network.target tailscaled.service qdrant.service ollama.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/index-checkin.sh

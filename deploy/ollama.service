@@ -1,0 +1,19 @@
+[Unit]
+Description=Ollama embedding server for the cohort's SocratiCode index
+Documentation=https://github.com/CannObserv/notifier/issues/57
+
+# tailscaled is ORDERING ONLY, for the reason qdrant.service gives at length.
+After=network.target tailscaled.service docker.service
+Requires=docker.service
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/ollama-run.sh
+ExecStop=/usr/bin/docker stop --timeout 30 ollama
+Restart=on-failure
+RestartSec=5s
+StartLimitBurst=5
+StartLimitIntervalSec=600
+
+[Install]
+WantedBy=multi-user.target
