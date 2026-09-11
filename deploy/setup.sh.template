@@ -1,52 +1,60 @@
-#!/usr/bin/env bash
 # co-index first-boot setup — joins the cannobserv.org.github tailnet as `index`.
 #
-# Provisioned through `new --setup-script`; exe.dev runs it once, as root's
-# child, on first boot. It does ONE thing: get the node onto the tailnet with
-# the right tag. Everything else (Docker, Qdrant, Ollama, the volume, the
-# check-in timer) is Phase 3, over the D13 admin edge, where a failure is
-# visible and fixable instead of buried in a first-boot log.
+# Provisioned through `new --setup-script`; exe.dev runs it once on first boot.
+# It does ONE thing: get the node onto the tailnet with the right tag.
+# Everything else (Docker, Qdrant, Ollama, the volume, the check-in timer) is
+# Phase 3, over the D13 admin edge, where a failure is visible and fixable
+# instead of buried in a first-boot log.
 #
-# __TAILSCALE_KEY__ is substituted at provision time. The rendered file is a
-# secret until the trap below shreds it: never write it to the repo, and never
-# pass it on a `tailscale ssh` command line — argv lands in the node's journal
-# (CannObserv/replicator#88).
+# __TAILSCALE_KEY__ is substituted at provision time, into a 0600 file OUTSIDE
+# the repo, which is shredded as soon as the request returns.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# THE SHAPE OF THIS FILE IS DICTATED BY THE TRANSPORT. Measured 2026-09-11
+# against `POST https://exe.dev/exec`, which has no stdin: the script must
+# survive the remote command parser as ONE double-quoted argument. So:
+#
+#   * no `"` anywhere — it would close the argument;
+#   * no `$` anywhere — absolute paths instead of $HOME, in case the parser
+#     expands inside double quotes;
+#   * `'` is safe, and `#` is safe: `ls notifier#comment` returned no match
+#     rather than filtering on `notifier`, so `#` is NOT a comment to the
+#     parser and the shebang survives;
+#   * `\n` is the line separator, per --setup-script's own documented handling.
+#
+# A script that cannot be transmitted is not a template. Keep it in this shape
+# and it renders straight onto the wire. The file-path and /dev/stdin forms of
+# --setup-script name paths on the SERVER, so neither is available here.
+#
+# There is no recovery path from a mangled first boot except the operator's
+# browser: this host has no exe.dev SSH identity (`ssh exe.dev whoami` is
+# Permission denied (publickey)), and the API token's scope excludes `rm`.
+# Hence the paranoia — and hence https://co-index.xterm.exe.xyz as the way back
+# in if it ever is mangled.
+# ─────────────────────────────────────────────────────────────────────────────
+#!/usr/bin/env bash
 set -euo pipefail
-
-# A path exedev can write. /var/log aborted notifier's setup script (#43).
-exec >>"$HOME/setup.log" 2>&1
-
-KEY="$HOME/.ts-authkey"
+exec >>/home/exedev/setup.log 2>&1
 umask 077
-
 # The shred sits in a trap, set BEFORE the key is written, not at the end of the
-# script. Under `set -e` archiver's script aborted at `tailscale up` and its key
+# script. Under `set -e` archiver's aborted at `tailscale up` and its key
 # survived on disk and in the journal. A trap is unconditional; a trailing line
 # is not.
-trap 'shred -u "$KEY" 2>/dev/null || true; sudo shred -u /exe.dev/setup 2>/dev/null || true' EXIT
-
-printf '%s' '__TAILSCALE_KEY__' >"$KEY"
-
+trap 'shred -u /home/exedev/.ts-authkey 2>/dev/null || true; sudo shred -u /exe.dev/setup 2>/dev/null || true' EXIT
+printf '%s' '__TAILSCALE_KEY__' >/home/exedev/.ts-authkey
 # exeuntu ships tailscaled. No `curl | sh`.
 sudo systemctl enable --now tailscaled
-
 # --hostname=index, not co-index: the tailnet name stays bare so every QDRANT_URL
 # and ACL rule reads naturally. `index` is what MagicDNS serves.
 #
-# --ssh is D13 build-phase scaffolding and comes out at the end of Phase 3,
-# along with the tag:notifier -> tag:index:22 rule. The steady state opens no
-# port 22 on the tailnet.
+# --ssh is D13 build-phase scaffolding and comes out at the end of Phase 3, with
+# the tag:notifier -> tag:index:22 rule.
 #
 # The key is single-tag and pre-approved. Tags bind at device REGISTRATION —
 # `tailscale up --reset` does not retag, and changing one later costs a logout
 # plus a fresh up (notifier#43 F1). Get it right here or not at all.
-sudo tailscale up \
-  --auth-key=file:"$KEY" \
-  --hostname=index \
-  --ssh \
-  --accept-dns=true
-
+sudo tailscale up --auth-key=file:/home/exedev/.ts-authkey --hostname=index --ssh --accept-dns=true
 # Never `set-region`. pdx is not among its values, so any call moves this node
-# out of the region the rest of the cohort is in (D1).
-
-echo "setup-done"
+# out of the region the rest of the cohort is in (D1). The account default is
+# empty and lands in pdx, which is why nothing here sets it.
+echo setup-done
