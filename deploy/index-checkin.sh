@@ -23,6 +23,9 @@ fi
 
 ADDR="$(/usr/local/bin/tailnet-bind.sh)"
 QKEY="$(cat /etc/socraticode/qdrant.key)"
+# Qdrant is HTTPS since D14, and the cert's SAN is the FULL MagicDNS name only
+# -- https://index:6333 fails verification. Same URL every client uses.
+QURL="https://index.taild0fb76.ts.net:6333"
 
 findings=""
 add() { findings="${findings}${findings:+,}{\"check\":\"$1\",\"subject\":\"$2\",\"message\":\"$3\"}"; }
@@ -30,9 +33,9 @@ add() { findings="${findings}${findings:+,}{\"check\":\"$1\",\"subject\":\"$2\",
 # Qdrant answering AND still refusing an unauthenticated read. A store that
 # went open is as much a defect as one that went down, and only one of the two
 # is visible from a plain health check.
-code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "api-key: ${QKEY}" "http://${ADDR}:6333/collections" || echo 000)
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "api-key: ${QKEY}" "${QURL}/collections" || echo 000)
 [ "$code" = "200" ] || add qdrant collections "authenticated read returned ${code}"
-open=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${ADDR}:6333/collections" || echo 000)
+open=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${QURL}/collections" || echo 000)
 [ "$open" = "401" ] || add qdrant auth "unauthenticated read returned ${open}, expected 401"
 
 # Ollama, and the one model the cohort's vectors are comparable under (D7).
@@ -43,6 +46,13 @@ if [ -f /tmp/index-checkin-tags.json ]; then
     || add ollama model "nomic-embed-text absent"
   rm -f /tmp/index-checkin-tags.json
 fi
+
+# The TLS cert expires in 90 days and qdrant-cert-renew.timer is what keeps it
+# alive. If that timer ever stops, Qdrant keeps serving happily and every
+# CLIENT fails verification instead -- a healthy-looking server and a dead
+# cohort. So the expiry is reported here too, well before it bites.
+days_left=$(( ( $(date -d "$(openssl x509 -in /etc/socraticode/tls/qdrant.crt -noout -enddate | cut -d= -f2)" +%s) - $(date +%s) ) / 86400 ))
+[ "$days_left" -gt 21 ] || add tls cert "certificate expires in ${days_left} day(s)"
 
 # Headroom, because a full disk stops an index without stopping a container.
 free_pct=$(df --output=pcent / | tail -1 | tr -dc '0-9')

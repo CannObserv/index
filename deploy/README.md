@@ -78,6 +78,54 @@ this node out of the region the rest of the cohort is in.
   negative, not just the positive
 - reboot: same node id, same IPs, same tag, `tailscaled` active, `NRestarts=0`
 
+## TLS is mandatory, not defence in depth (D14)
+
+SocratiCode **refuses** to send `QDRANT_API_KEY` to a non-HTTPS, non-localhost
+host:
+
+```
+QDRANT_API_KEY is set but http://index:6333 is not HTTPS.
+Refusing to send the API key over a non-TLS connection.
+```
+
+So an API-key-gated Qdrant on a plaintext tailnet port cannot exist, however
+well WireGuard encrypts the hop. The cert is Tailscale's own, for this node's
+**full** MagicDNS name:
+
+```bash
+sudo tailscale cert --cert-file /etc/socraticode/tls/qdrant.crt \
+                    --key-file  /etc/socraticode/tls/qdrant.key \
+                    index.taild0fb76.ts.net
+```
+
+Requires **DNS → HTTPS Certificates** enabled for the tailnet. With it off the
+error is `your Tailscale account does not support getting TLS certs`, which
+reads like a plan limit and is not one.
+
+**Every client must use `https://index.taild0fb76.ts.net:6333`.** The short
+name is not in the certificate's SAN, so `https://index:6333` fails with
+`no alternative certificate subject name matches target host name 'index'`.
+
+### Renewal is ours, and its absence would be silent
+
+Tailscale renews automatically only when it also owns the install location.
+Its docs are explicit that a cert written to files by `tailscale cert` is the
+operator's to renew, because tailscaled does not know where it was put or how
+to reload it. Let's Encrypt means **90 days**.
+
+Unattended, the cohort's search would stop on a date three months out with no
+failed unit anywhere: Qdrant keeps serving, and every *client* fails
+verification instead. Two defences, because that is the exact failure class
+this whole issue exists to remove:
+
+| | |
+|---|---|
+| `qdrant-cert-renew.timer` | weekly, `Persistent=true`. Restarts Qdrant **only if the file changed** — a renewed cert that nothing reloaded is indistinguishable from a renewal that worked, until it isn't. |
+| `index-checkin.sh` | reports a cert inside 21 days of expiry as a finding, so a *stopped renewal timer* becomes an alert rather than a surprise. |
+
+`Persistent=true` here and not on the check-in timer: a missed heartbeat is due
+again in ten minutes, a missed renewal window closes for good.
+
 ## Contents
 
 | | |
