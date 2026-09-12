@@ -1,7 +1,7 @@
 # A shared index VM for the cohort — `co-index`
 
-**Status:** approved — D1 (`co-index`, 2 vCPU / 8 GB / 30 GB) and D6 settled by the operator,
-2026-09-11. Phases 0–1 in progress; Phase 2 needs an explicit go before `new` runs
+**Status:** in flight — **Phases 0–5 done** (2026-09-12). Phase 6 is the soak;
+Phase 7 is the cohort's adoption, and needs an explicit go
 **Issue:** [#57](https://github.com/CannObserv/notifier/issues/57)
 **Cohort:** the fifth VM, and the first that is not a service. Pattern from
 [notifier#43](https://github.com/CannObserv/notifier/issues/43); phase spine and
