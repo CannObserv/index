@@ -31,7 +31,43 @@ if [ ! -d "$repo" ]; then
   exit 2
 fi
 
-target="$repo/.claude/settings.local.json"
+rel=".claude/settings.local.json"
+target="$repo/$rel"
+
+# Refuse anything git would commit. CannObserv/broker#17 asserted this file
+# "is git-ignored"; in CannObserv/broker it was not, and that repo is PUBLIC
+# (notifier#68). Four of five cohort repos carried the rule, so the assertion
+# read as true right up to the exception that would have put the cohort's one
+# Qdrant key a `git add -A` from GitHub. Per #57 that is a rotation on every
+# VM, with no overlap window.
+#
+# Three distinct failures, three remedies, so they do not share a message. The
+# checks run BEFORE mkdir below: a refusal must leave nothing behind.
+#
+# `check-ignore` is asked whatever the SOURCE of the rule. A global
+# core.excludesfile really does stop a commit from this VM, which is the whole
+# of this script's responsibility. Pinning the rule to the repo's own
+# .gitignore is the repo's job (broker#18); enforcing it here would refuse a
+# target that is in fact safe.
+if ! git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "$repo is not a git work tree - refusing to write the shared key" >&2
+  echo "  the check that this file cannot be committed cannot be made here" >&2
+  exit 2
+fi
+if git -C "$repo" ls-files --error-unmatch "$rel" >/dev/null 2>&1; then
+  echo "$repo/$rel is TRACKED by git - refusing to write the shared key" >&2
+  echo "  .gitignore does not apply to tracked paths, so adding a rule fixes" >&2
+  echo "  nothing. The key may already be in history: untrack it, and rotate" >&2
+  echo "  the store key on co-index and every cohort VM (#57)." >&2
+  exit 2
+fi
+if ! git -C "$repo" check-ignore -q "$rel"; then
+  echo "$repo/$rel is not ignored - refusing to write the shared key" >&2
+  echo "  add '$rel' to $repo/.gitignore, then re-run." >&2
+  echo "  verify with: git -C $repo check-ignore -v $rel" >&2
+  exit 2
+fi
+
 mkdir -p "$repo/.claude"
 
 # The merge, the atomic replace and the mode all happen in python: a shell
