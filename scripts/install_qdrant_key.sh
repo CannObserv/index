@@ -17,7 +17,7 @@
 # The store on co-index is gated by a single global Qdrant service.api_key —
 # no key list, no per-client identity, no per-collection scope. Every cohort VM
 # holds the same secret, so a leak anywhere is a rotation everywhere. See
-# docs/SOCRATICODE.md and CannObserv/notifier#57.
+# CannObserv/notifier's docs/reference/shared-store.md, and #57 there.
 set -euo pipefail
 umask 077
 
