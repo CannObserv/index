@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# D10: report this host's liveness to notifier's dead-man's timer (#56).
+# D10: report this host's liveness to co-status's dead-man's timer (#56, #83).
 #
 # The point is not this script's findings. It is that notifier alerts when this
 # script STOPS running at all -- #57's second argument is that the last
@@ -7,7 +7,7 @@
 # watching it reported into a log nobody read. A store whose absence is an
 # alert is the fix.
 #
-# `status` is this host's own judgement, and `variables` is opaque to notifier
+# `status` is this host's own judgement, and `variables` is opaque to co-status
 # -- that division is the API boundary this service refuses to cross.
 set -euo pipefail
 
@@ -70,8 +70,12 @@ if [ "$count" -eq 0 ]; then status=ok; else status=alert; fi
 payload=$(printf '{"status":"%s","variables":{"source":"co-index","finding_count":%s,"findings":[%s]}}' \
   "$status" "$count" "$findings")
 
+# co-status took over the dead-man's timers (#83, CannObserv/status#2). Same
+# path, body and monitor id as notifier's; only the host and the key changed.
+# The NOTIFIER_* names in /etc/socraticode/notifier.env are kept so the switch
+# is two values, and are renamed when co-index gets its own repo (#90).
 printf '%s' "$payload" | curl -sS --max-time 20 -X POST \
-  "http://notifier:9000/api/v1/monitors/${MONITOR_ID}/checkin" \
+  "http://status:9000/api/v1/monitors/${MONITOR_ID}/checkin" \
   -H "X-API-Key: ${NOTIFIER_API_KEY}" \
   -H 'Content-Type: application/json' \
   --data-binary @- \
