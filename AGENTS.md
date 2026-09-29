@@ -61,3 +61,7 @@ exe.dev VM `co-index` (`pdx`, 2 vCPU / 8 GB / 30 GB, proxy `private`), tailnet n
 **Dates:** UTC; ISO 8601.
 
 **Cross-repo:** issues only on sibling cohort repos, never commits.
+
+## Agent Skills
+
+Vendored as submodules under `skills-vendor/` (gregoryfoster/skills, obra/superpowers), symlinked into `skills/` and `.claude/skills/`. Add or refresh with the `managing-skills` skill. A fresh clone needs `git submodule update --init`.
