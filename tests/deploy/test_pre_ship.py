@@ -27,10 +27,14 @@ SCRIPT = REPO_ROOT / "scripts" / "pre-ship.sh"
 CI = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
 
-def ci_commands() -> list[str]:
-    """CI's ``run:`` steps across jobs, in file order, each command once."""
-    runs = re.findall(r"^\s*run:\s*(.+?)\s*$", CI.read_text(), flags=re.MULTILINE)
+def parse_runs(workflow: str) -> list[str]:
+    """A workflow's ``run:`` steps across jobs, in file order, each command once."""
+    runs = re.findall(r"^\s*(?:-\s+)?run:\s*(.+?)\s*$", workflow, flags=re.MULTILINE)
     return list(dict.fromkeys(runs))
+
+
+def ci_commands() -> list[str]:
+    return parse_runs(CI.read_text())
 
 
 def script_commands() -> list[str]:
@@ -86,6 +90,19 @@ def test_the_ci_parser_reads_what_ci_runs():
     steps = ci_commands()
     assert "uv run pytest" in steps
     assert not [s for s in steps if s[0] in "|>"], "block-scalar run: steps are not parsed"
+
+
+def test_the_parser_reads_both_step_forms():
+    """A shorthand ``- run:`` step missed here would be a CI step the gate skips."""
+    workflow = (
+        "    steps:\n"
+        "      - name: named\n"
+        "        run: uv run a\n"
+        "      - run: uv run b\n"
+        "      - run: |\n"
+        "          echo c\n"
+    )
+    assert parse_runs(workflow) == ["uv run a", "uv run b", "|"]
 
 
 def test_runs_exactly_what_ci_runs_in_order():
