@@ -1,0 +1,33 @@
+[project]
+name = "co-index"
+version = "0.1.0"
+description = "Deploy surface and operator tooling for co-index, the cohort's shared SocratiCode store (Qdrant + Ollama)."
+readme = "README.md"
+requires-python = ">=3.12"
+# Nothing here is a Python package: the host runs shell and systemd units, and
+# the tests drive them as subprocesses. The dependencies are the tools only.
+dependencies = []
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.2,<5",
+    "pytest>=9.1.1,<10",
+    "ruff>=0.16.5,<0.17",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# docs/plans/ are dated snapshots of what was proposed, not maintained source;
+# reformatting their code samples rewrites the record.
+extend-exclude = ["docs/plans/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
