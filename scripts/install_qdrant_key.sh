@@ -11,13 +11,13 @@
 # from stdin straight into python, so it is never in this script's environment.
 #
 # Never run this under `bash -x`. Tracing a script that touches a credential is
-# how two were leaked during #57; the trace writes the value to stdout, and from
+# how two were leaked during notifier#57; the trace writes the value to stdout, and from
 # there to whatever was capturing it.
 #
 # The store on co-index is gated by a single global Qdrant service.api_key —
 # no key list, no per-client identity, no per-collection scope. Every cohort VM
 # holds the same secret, so a leak anywhere is a rotation everywhere. See
-# CannObserv/notifier's docs/reference/shared-store.md, and #57 there.
+# CannObserv/notifier's docs/reference/shared-store.md, and notifier#57.
 set -euo pipefail
 umask 077
 
@@ -38,7 +38,7 @@ target="$repo/$rel"
 # "is git-ignored"; in CannObserv/broker it was not, and that repo is PUBLIC
 # (notifier#68). Four of five cohort repos carried the rule, so the assertion
 # read as true right up to the exception that would have put the cohort's one
-# Qdrant key a `git add -A` from GitHub. Per #57 that is a rotation on every
+# Qdrant key a `git add -A` from GitHub. Per notifier#57 that is a rotation on every
 # VM, with no overlap window.
 #
 # Three distinct failures, three remedies, so they do not share a message. The
@@ -58,7 +58,7 @@ if git -C "$repo" ls-files --error-unmatch "$rel" >/dev/null 2>&1; then
   echo "$repo/$rel is TRACKED by git - refusing to write the shared key" >&2
   echo "  .gitignore does not apply to tracked paths, so adding a rule fixes" >&2
   echo "  nothing. The key may already be in history: untrack it, and rotate" >&2
-  echo "  the store key on co-index and every cohort VM (#57)." >&2
+  echo "  the store key on co-index and every cohort VM (notifier#57)." >&2
   exit 2
 fi
 if ! git -C "$repo" check-ignore -q "$rel"; then

@@ -1,5 +1,5 @@
 [Unit]
-Description=co-index check-in every 10 minutes (#57 D10)
+Description=co-index check-in every 10 minutes (notifier#57 D10)
 
 [Timer]
 OnBootSec=2min

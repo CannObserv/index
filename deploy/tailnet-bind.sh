@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Print this host's Tailscale address, waiting for tailscaled to assign one.
 #
-# Ported from CannObserv/notifier scripts/tailnet_bind.sh (#43 D3, #57 D3).
+# Ported from CannObserv/notifier scripts/tailnet_bind.sh (notifier#43 D3, notifier#57 D3).
 # Both containers publish on this address alone, never 0.0.0.0, so the store is
 # unreachable from exe.dev's internal 10.42.0.0/16, from the exe.dev HTTPS
 # proxy, and from the internet. The Tailscale ACL is what decides access.

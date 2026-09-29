@@ -1,5 +1,5 @@
 [Unit]
-Description=Renew the Qdrant TLS certificate (#57 D14)
+Description=Renew the Qdrant TLS certificate (notifier#57 D14)
 After=network.target tailscaled.service
 
 [Service]

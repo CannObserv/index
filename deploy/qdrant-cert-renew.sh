@@ -9,7 +9,7 @@
 # Without this timer the whole cohort's search dies on a date roughly three
 # months out, with no warning and no failed unit: Qdrant keeps serving, and
 # every client fails TLS verification instead. That is the exact failure class
-# #57 exists to remove, so it gets a timer AND a finding in the check-in.
+# notifier#57 exists to remove, so it gets a timer AND a finding in the check-in.
 set -euo pipefail
 
 NAME="$(tailscale status --json | python3 -c 'import sys,json;print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')"

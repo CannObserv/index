@@ -1,7 +1,7 @@
 [Unit]
 Description=Qdrant vector store for the cohort's SocratiCode index
 Documentation=https://github.com/CannObserv/notifier/issues/57
-Documentation=https://github.com/CannObserv/notifier/blob/main/docs/plans/2026-09-11-shared-qdrant-vm-design.md
+Documentation=https://github.com/CannObserv/index/blob/main/docs/plans/2026-09-11-shared-qdrant-vm-design.md
 
 # tailscaled is ORDERING ONLY -- no Wants=, no Requires=, no BindsTo=.
 # A propagating dependency would carry every tailscaled restart (an apt

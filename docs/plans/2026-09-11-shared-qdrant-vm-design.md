@@ -2,7 +2,7 @@
 
 **Status:** in flight — **Phases 0–5 done** (2026-09-12). Phase 6 is the soak;
 Phase 7 is the cohort's adoption, and needs an explicit go
-**Issue:** [#57](https://github.com/CannObserv/notifier/issues/57)
+**Issue:** [CannObserv/notifier#57](https://github.com/CannObserv/notifier/issues/57)
 **Cohort:** the fifth VM, and the first that is not a service. Pattern from
 [notifier#43](https://github.com/CannObserv/notifier/issues/43); phase spine and
 provisioning lessons from
@@ -16,7 +16,7 @@ Two failures, one cause.
 
 **Cross-repo search is gone.** `SOCRATICODE_LINKED_PROJECTS` points a project at
 sibling checkouts **by absolute path**. That worked only while all four services
-shared `/home/exedev` on one box. #43 moved notifier out; broker, archiver and
+shared `/home/exedev` on one box. CannObserv/notifier#43 moved notifier out; broker, archiver and
 replicator followed. No VM has a sibling checkout any more, and nothing
 announced the loss.
 
@@ -24,7 +24,7 @@ announced the loss.
 `~/.claude/plugins`, no Qdrant image, no Qdrant volume. `.git/socraticode-health.log`
 has five entries and every one of them says `node not on PATH — skipped`, the
 oldest 2026-08-31. The daily hook reported it five times and repaired nothing,
-by design (#21). The last measured index is the 2026-08-22 figure still written
+by design (CannObserv/notifier#21). The last measured index is the 2026-08-22 figure still written
 into `docs/SOCRATICODE.md`.
 
 Everything that vanished lived under `$HOME` or in Docker's local state.
@@ -63,7 +63,7 @@ for the citations. Four results move this design:
 |---|---|---|
 | **D0** | **Every cohort repo commits `.socraticode.json` with a fixed `projectId`.** Lands **first**, needs no VM. Notifier by commit; the other three by issue. | Without it the project id is `sha256(abs_path)[:12]`, so every git worktree is a separate project with its own six collections and its own ~75-minute first index — this repo uses worktrees routinely. It is also the durable fix for the path fragility that opened this issue, and it makes the shared store legible: `codebase_notifier`, not `codebase_a1b2c3d4e5f6`. |
 | **D1** | **exe.dev VM `co-index`, tailnet `index`, `tag:index`, `pdx`**, **2 vCPU / 8 GB / 30 GB**, proxy `private`. Never `set-region`. If exe.dev refuses the name, **stop and ask** — do not improvise. | The cohort `co-<name>` pattern with a bare tailnet name. Named for the role, not the product, so swapping Qdrant later does not make the node name a lie. **2 vCPU is a deliberate acceptance, not an oversight:** embedding is CPU-bound and now shared, so concurrent first-indexes queue behind each other. That cost is paid once per repo and is unattended; RAM and disk are where a shared store actually grows, hence 8 GB / 30 GB against the cohort's 4/20. Revisit only if steady-state incremental indexing — not the first index — is observed to queue. |
-| **D2** | **Single-tag Tailscale key, tag set before the first join.** | Tags bind at device registration; `tailscale up --reset` does not retag, and a multi-tag key cannot be narrowed with `--advertise-tags` (#43 F1). |
+| **D2** | **Single-tag Tailscale key, tag set before the first join.** | Tags bind at device registration; `tailscale up --reset` does not retag, and a multi-tag key cannot be narrowed with `--advertise-tags` (CannObserv/notifier#43 F1). |
 | **D3** | **Both services bind this host's tailnet address alone**, never `0.0.0.0`, published that way by Docker (`-p <tailnet-ip>:6333:6333`). The address is resolved in the same process that binds. | Same reasoning as `notifier.service`, and the same trap: systemd reads every `EnvironmentFile=` before `ExecStartPre` runs, so no pre-step can put the address into the environment `ExecStart` sees. Reuse `scripts/tailnet_bind.sh` (`/proc/net/fib_trie`, never `ip addr`; non-zero on timeout). |
 | **D4** | **Qdrant on :6333 with `QDRANT_API_KEY` set. Ollama on :11434 with no authentication, and that is written down.** | Tailnet-only is not authorization. The asymmetry is real: Ollama has no auth to enable, and `/api/pull` lets any cohort node pull an arbitrary model onto the shared box. Accepted with the note rather than proxied — a path-filtering reverse proxy costs more than the exposure is worth on a node with no production role (D9). |
 | **D5** | **One shared Ollama, `OLLAMA_MODE=external` set explicitly on every client**, running replicator#88's slim CPU-only image retagged `ollama/ollama:latest`. | The default `OLLAMA_MODE` is `auto`, which falls back to a **Docker** pull when it finds no local Ollama — on a VM with no Docker that is a slow, confusing failure. The slim image is 221 MB against 9.19 GB and its embeddings are bitwise identical to the fat image's, so it forces no re-index and fragments no vectors. Its Dockerfile lands in `deploy/index/ollama-slim/`, answering the "say where it belongs" in replicator#88. **The `ollama/ollama:latest` tag is load-bearing** — `ensureOllamaContainerReady` guards on presence only, so an untag or a `docker image prune -a` silently re-pulls 9.19 GB. |
@@ -71,7 +71,7 @@ for the citations. Four results move this design:
 | **D7** | **One embedding backend, pinned explicitly cohort-wide:** `EMBEDDING_MODEL=nomic-embed-text`, `EMBEDDING_DIMENSIONS=768`, set in each VM's environment rather than left to the provider default. | Cross-collection merge orders by raw cosine, which is comparable only within one model. Mixed models give **silently mis-ordered** cross-repo results — no error. Pinning both values makes the shared premise explicit at each client instead of implicit in one library default. |
 | **D8** | **Shape (a): each service VM indexes its own repo.** `co-index` holds no checkout, no repo credential and no Node. Sibling repos are **read-only HTTPS clones** under `/home/exedev`, and `linkedProjects` is committed as `["../archiver", "../broker", "../replicator", "../watcher"]` — relative, so it is portable. | Q4. Shape (b)'s one advantage — a single toolchain — does not exist, because Node is needed wherever sessions run. (b) also wants read access to all four repos and a checkout-refresh job. Relative linked paths mean a VM missing a sibling clone simply searches less; **the health hook reports resolved-vs-configured**, so that degrade is announced rather than silent. |
 | **D9** | **Nothing on any production path depends on `co-index`.** It is developer tooling. An outage degrades search on four VMs and stops no service. | Scopes D4's accepted exposure, D6's dropped backup, and the ACL below. Worth stating because a fifth always-on VM otherwise looks like a fifth thing that can take the cohort down. |
-| **D10** | **`co-index` checks in to notifier's dead-man's timer (#56)** on a systemd timer. | The second argument in #57 is that a per-VM install fails *silently*. A store whose absence is announced is the fix, and this repo already runs the mechanism. It makes `tag:index` a `src` in exactly one rule — the same amendment `tag:broker` took in broker#3. |
+| **D10** | **`co-index` checks in to notifier's dead-man's timer (CannObserv/notifier#56)** on a systemd timer. | The second argument in CannObserv/notifier#57 is that a per-VM install fails *silently*. A store whose absence is announced is the fix, and this repo already runs the mechanism. It makes `tag:index` a `src` in exactly one rule — the same amendment `tag:broker` took in broker#3. |
 | **D11** | **One host per `projectId`, enforced by convention.** | The index lock is `os.tmpdir()/socraticode-locks/<projectId>-<op>` — **host-local**. A shared Qdrant gives no shared lock, so two hosts indexing one project write the same collections concurrently with nothing stopping them. Natural under D8; written down so nobody later adds a helpful central re-index cron. |
 | **D14** | **Qdrant serves TLS, and `QDRANT_URL` names the node's full MagicDNS name.** Discovered in Phase 4, 2026-09-12: SocratiCode **refuses** to send `QDRANT_API_KEY` to a non-HTTPS, non-localhost host — *"Refusing to send the API key over a non-TLS connection."* D4 as originally written was therefore not implementable. | Three ways out, and the choice matters. **Dropping the key** contradicts D4's own premise that tailnet-only is not authorization. **A localhost forwarder on each client** is accepted by the guard (a `localhost` URL is exempt) and the hop stays WireGuard-encrypted, but it satisfies a safety check by routing around it and adds a moving part per client VM. **TLS** meets the guard on its own terms. Tailscale's own certs are the cheap form of it — auto-renewing, real chain of trust — and need `DNS → HTTPS Certificates` enabled for the tailnet; the failure when it is off is `your Tailscale account does not support getting TLS certs`, which reads like a plan limit and is not one. Fallback if it truly is unavailable: our own CA plus `NODE_EXTRA_CA_CERTS` on each client. **Consequence for D8's env block:** the URL becomes `https://index.taild0fb76.ts.net:6333`, not `http://index:6333`, because the short MagicDNS name does not match the certificate's SAN. |
 | **D13** | **A temporary `tag:notifier → tag:index:22` admin edge, and `--ssh` at join, both removed at the end of Phase 3.** | D1 says `tag:index` exposes no service port and the host is administered over public `ssh co-index.exe.xyz`. That is the steady state, and it is not reachable from a session on another exe.dev VM — exe.dev VMs are isolated from each other, which is the premise the tailnet exists to answer. Without a build-phase edge there is no host from which to run Phase 3. Replicator#88 D5 is the proven shape, including the trap it names: Tailscale SSH needs **both** an `acls` rule and an `ssh` block — without the network rule the node never appears in the peer's netmap and the `ssh` rule is never consulted, which presents as a DNS failure rather than a permission denial. |
@@ -304,11 +304,11 @@ is ever built.
    It is a first-index cost, not a steady-state one: incremental updates embed
    only changed files. The trigger to revisit is *incremental* runs queueing.
 6. **A fifth VM's own install decays the same way this one did.** D10 is the
-   answer, and it is the thing #57 says was missing the first time.
+   answer, and it is the thing CannObserv/notifier#57 says was missing the first time.
 
 ## Success criteria
 
-- [ ] Q1–Q3 answered by measurement and recorded in #57 **before** provisioning — **done**
+- [ ] Q1–Q3 answered by measurement and recorded in CannObserv/notifier#57 **before** provisioning — **done**
 - [ ] `.socraticode.json` committed here, sibling issues filed (D0)
 - [ ] `co-index` in `pdx`, 2 vCPU / 8 GB / 30 GB, `tag:index`, survives a reboot
       with the same identity

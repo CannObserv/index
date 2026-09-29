@@ -19,7 +19,7 @@ docker rm -f ollama >/dev/null 2>&1 || true
 # keeps a locally-built image from impersonating upstream's.
 #
 # No API key exists for Ollama -- it has none to enable. Port 11434 is gated by
-# the Tailscale ACL alone (#57 D4), which is written down rather than implied.
+# the Tailscale ACL alone (notifier#57 D4), which is written down rather than implied.
 exec docker run --rm --name ollama \
   --publish "${ADDR}:11434:11434" \
   --volume /var/lib/ollama:/root/.ollama \

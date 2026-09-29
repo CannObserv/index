@@ -1,7 +1,7 @@
 """Behaviour and drift tests for scripts/install_qdrant_key.sh.
 
 The shared SocratiCode store on ``co-index`` is gated by a single global Qdrant
-``service.api_key`` (#57 D4/D14). There is no key list, no per-client identity
+``service.api_key`` (notifier#57 D4/D14). There is no key list, no per-client identity
 and no per-collection scope, so every adopting VM in the cohort holds the same
 secret and a leak anywhere rotates it everywhere. That raises the cost of a
 sloppy install step well above what a one-line ``echo`` deserves.
@@ -165,7 +165,7 @@ def test_key_never_reaches_argv():
 
 
 def test_does_not_trace_itself():
-    """``set -x`` here is how this session leaked two credentials (#57)."""
+    """``set -x`` here is how this session leaked two credentials (notifier#57)."""
     assert "set -x" not in code()
     assert "-x" not in code().split("set -euo pipefail")[0]
 
@@ -174,7 +174,7 @@ def test_refuses_a_target_git_would_commit(tmp_path):
     """The notifier#68 case: a work tree with no rule for the target.
 
     CannObserv/broker was exactly this, and public. Writing here puts the
-    cohort's single Qdrant key one ``git add -A`` from GitHub, and per #57 a
+    cohort's single Qdrant key one ``git add -A`` from GitHub, and per notifier#57 a
     leak anywhere is a rotation on every cohort VM with no overlap window.
     """
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)

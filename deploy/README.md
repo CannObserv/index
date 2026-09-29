@@ -1,7 +1,7 @@
 # `co-index` — the cohort's shared index host
 
 Design: [`docs/plans/2026-09-11-shared-qdrant-vm-design.md`](../../docs/plans/2026-09-11-shared-qdrant-vm-design.md).
-Issue: [#57](https://github.com/CannObserv/notifier/issues/57).
+Issue: [CannObserv/notifier#57](https://github.com/CannObserv/notifier/issues/57).
 
 One VM running Qdrant and Ollama for all four cohort services, so the vector
 store survives what took the per-VM installs out: everything that vanished

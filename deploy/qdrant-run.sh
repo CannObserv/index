@@ -3,7 +3,7 @@
 #
 # systemd reads every EnvironmentFile= before ExecStartPre= runs, so no
 # pre-step can put the tailnet address into the environment ExecStart would
-# see. notifier's serve.sh exists for exactly this reason (#43); this is the
+# see. notifier's serve.sh exists for exactly this reason (notifier#43); this is the
 # same shape with docker in place of uvicorn.
 set -euo pipefail
 
@@ -21,7 +21,7 @@ docker rm -f qdrant >/dev/null 2>&1 || true
 # not published: the client speaks REST.
 # TLS is not belt-and-braces on top of WireGuard: SocratiCode REFUSES to send
 # QDRANT_API_KEY to a non-HTTPS, non-localhost host, so without this the key
-# and the store cannot both exist (#57 D14). The cert is Tailscale's, for this
+# and the store cannot both exist (notifier#57 D14). The cert is Tailscale's, for this
 # node's full MagicDNS name -- the short name `index` is not in its SAN, so
 # every client must use https://index.taild0fb76.ts.net:6333.
 #

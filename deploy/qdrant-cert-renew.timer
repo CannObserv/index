@@ -1,5 +1,5 @@
 [Unit]
-Description=Weekly Qdrant TLS renewal check (#57 D14)
+Description=Weekly Qdrant TLS renewal check (notifier#57 D14)
 
 [Timer]
 OnCalendar=Mon 04:00
