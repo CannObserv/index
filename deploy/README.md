@@ -132,6 +132,7 @@ again in ten minutes, a missed renewal window closes for good.
 |---|---|
 | `setup.sh.template` | first-boot script; `__TAILSCALE_KEY__` substituted at provision time. Joins the tailnet and nothing else. |
 | `ollama-slim/Dockerfile` | CPU-only Ollama, 221 MB against 9.19 GB, embeddings bitwise identical to the stock image (CannObserv/replicator#88). |
+| `needrestart.conf.d/index.conf` | needrestart lists restarts and never performs them (#2), so an apt run cannot bounce Docker, and Qdrant and Ollama with it. Install before any apt run: `sudo install -D -m 644 deploy/needrestart.conf.d/index.conf /etc/needrestart/conf.d/index.conf`, then `sudo needrestart -m u -r l -b` prints `Disabling Ubuntu mode` and restarts nothing. |
 
 **On `co-index` the image keeps its own tag, `socraticode/ollama-slim:latest`.**
 replicator#88 records that the `ollama/ollama:latest` tag is load-bearing,
