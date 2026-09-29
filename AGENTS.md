@@ -37,7 +37,7 @@ uv run pre-commit install   # once per clone
 | `scripts/install_qdrant_key.sh` | Installs the store's single API key into a *client* repo's `.claude/settings.local.json`. Key on stdin only, atomic 0600 write, refuses a target git would commit |
 | `tests/deploy/` | Behaviour and drift tests for the above |
 
-**Clients run `install_qdrant_key.sh` from a read-only clone of this repo** (public, no credential). They do not vendor it: its tests pin exactly the properties a copy loses first.
+**Clients run `install_qdrant_key.sh` from a read-only clone of this repo** (public, no credential), never a copy: its tests pin exactly the properties a copy loses first. Procedure, and rotation: [docs/installing-the-key.md](docs/installing-the-key.md).
 
 ## Infrastructure
 

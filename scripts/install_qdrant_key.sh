@@ -3,7 +3,7 @@
 #
 #   ssh co-index.exe.xyz "sudo sed -n 's/^QDRANT__SERVICE__API_KEY=//p' \
 #       /etc/socraticode/qdrant.env" \
-#     | ssh <vm>.exe.xyz 'bash ~/install_qdrant_key.sh ~/<repo>'
+#     | ssh <vm>.exe.xyz 'bash ~/index/scripts/install_qdrant_key.sh ~/<repo>'
 #
 # THE KEY ARRIVES ON STDIN. Never as an argument: argv is visible in `ps` to
 # every other process on the box for the life of the call, and lands in the
