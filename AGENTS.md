@@ -54,6 +54,12 @@ exe.dev VM `co-index` (`pdx`, 2 vCPU / 8 GB / 30 GB, proxy `private`), tailnet n
 
 **Where this repo is worked on: `co-index` itself** (D15, which amends D8). One checkout of *this* repo and a token scoped to it. **Never** a client checkout, a client-repo credential, or Node on this host. Nothing here indexes (D11).
 
+**Credentials:** `.env` (git-ignored, 0600) holds `GH_TOKEN`, scoped to this repo only. Load with `set -a; . ./.env; set +a`. Push without putting the token in argv or a URL:
+
+```bash
+git -c credential.helper= -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f' push
+```
+
 ## Conventions
 
 **Commits:** `#<n> [type]: <description>`, or `[type]: <description>` without an issue. Types: feat, fix, refactor, docs, test, chore.
