@@ -1,0 +1,13 @@
+[Unit]
+Description=Weekly Qdrant TLS renewal check (#57 D14)
+
+[Timer]
+OnCalendar=Mon 04:00
+RandomizedDelaySec=1h
+# Persistent, unlike the check-in timer: a missed renewal matters and a missed
+# heartbeat does not -- the heartbeat's whole point is that the NEXT one is due
+# in ten minutes, while a renewal window closes for good.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

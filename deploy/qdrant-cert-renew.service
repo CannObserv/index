@@ -1,0 +1,7 @@
+[Unit]
+Description=Renew the Qdrant TLS certificate (#57 D14)
+After=network.target tailscaled.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/qdrant-cert-renew.sh

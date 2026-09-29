@@ -1,0 +1,36 @@
+[Unit]
+Description=Qdrant vector store for the cohort's SocratiCode index
+Documentation=https://github.com/CannObserv/notifier/issues/57
+Documentation=https://github.com/CannObserv/notifier/blob/main/docs/plans/2026-09-11-shared-qdrant-vm-design.md
+
+# tailscaled is ORDERING ONLY -- no Wants=, no Requires=, no BindsTo=.
+# A propagating dependency would carry every tailscaled restart (an apt
+# upgrade is enough) through to this unit and spend one of its starts an hour.
+# CannObserv/replicator#88 D7 pins the same rule for the same reason.
+#
+# Ordering alone does NOT wait for an address to be ASSIGNED. That wait lives
+# in tailnet-bind.sh, called from ExecStart, because the publish cannot bind an
+# address that is not there yet.
+After=network.target tailscaled.service docker.service
+
+# docker IS a hard dependency: without dockerd there is no container at all,
+# and dockerd stopping stops this container anyway (live-restore is off).
+# Stating it is honest rather than propagating something that would not.
+Requires=docker.service
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/qdrant-run.sh
+ExecStop=/usr/bin/docker stop --timeout 30 qdrant
+Restart=on-failure
+RestartSec=5s
+
+# Sized against tailnet-bind.sh's 60s wait: five starts at 5s apart cannot
+# outrun a single 60s wait, so a slow tailnet at boot burns one start, not the
+# budget. observo#473 is the failure this bounds -- a transient that leaves the
+# unit failed until someone runs `systemctl reset-failed`.
+StartLimitBurst=5
+StartLimitIntervalSec=600
+
+[Install]
+WantedBy=multi-user.target
