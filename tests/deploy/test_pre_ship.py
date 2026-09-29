@@ -77,14 +77,15 @@ def test_script_exists_and_is_executable():
     assert os.stat(SCRIPT).st_mode & stat.S_IXUSR
 
 
-def test_ci_has_the_steps_this_file_assumes():
-    """Guards the drift test below against a parser that matches nothing."""
-    assert ci_commands() == [
-        "uv sync --locked",
-        "uv run ruff check .",
-        "uv run ruff format --check .",
-        "uv run pytest",
-    ]
+def test_the_ci_parser_reads_what_ci_runs():
+    """Guards the drift test below against a parser that reads nothing, or reads wrong.
+
+    It reads one-line ``run:`` steps only. A block scalar (``run: |``) would
+    come back as a bare ``|``, so one fails here, naming the cause.
+    """
+    steps = ci_commands()
+    assert "uv run pytest" in steps
+    assert not [s for s in steps if s[0] in "|>"], "block-scalar run: steps are not parsed"
 
 
 def test_runs_exactly_what_ci_runs_in_order():
@@ -97,12 +98,12 @@ def test_runs_every_step_and_passes_when_all_pass(fake_uv):
     assert [line.split("|", 1)[1] for line in lines] == ci_commands()
 
 
-@pytest.mark.parametrize("failing", range(4))
+@pytest.mark.parametrize("failing", ci_commands())
 def test_stops_at_the_first_failure(fake_uv, failing):
     steps = ci_commands()
-    code, lines = run(fake_uv, REPO_ROOT, fail_on=steps[failing])
+    code, lines = run(fake_uv, REPO_ROOT, fail_on=failing)
     assert code != 0
-    assert [line.split("|", 1)[1] for line in lines] == steps[: failing + 1]
+    assert [line.split("|", 1)[1] for line in lines] == steps[: steps.index(failing) + 1]
 
 
 def test_runs_from_the_repo_root_whatever_the_cwd(fake_uv):
