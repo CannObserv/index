@@ -47,6 +47,13 @@ INSTALL: dict[str, tuple[Path, int] | None] = {
 }
 INSTALLED = {src: dest for src, dest in INSTALL.items() if dest is not None}
 LOADED_UNITS = [src for src in INSTALLED if src.endswith((".service", ".timer"))]
+# A unit with [Install] is started by being enabled; one without (the timers'
+# oneshot services) is started by its timer.
+ENABLED_UNITS = [
+    src
+    for src in LOADED_UNITS
+    if "[Install]" in (REPO_ROOT / "deploy" / src).read_text().splitlines()
+]
 
 
 def _tracked() -> set[str]:
@@ -99,20 +106,35 @@ def test_installed_copy_matches_tracked(src: str) -> None:
     assert installed.st_uid == 0, f"{dest} not owned by root. Fix: {_fix(src)}"
 
 
-@pytest.mark.parametrize("src", LOADED_UNITS)
-def test_loaded_unit_is_the_installed_one(src: str) -> None:
-    """A copied unit is not a loaded one until ``systemctl daemon-reload``."""
+def _show(src: str, *props: str) -> dict[str, str]:
     _on_host()
     systemctl = shutil.which("systemctl")
     assert systemctl is not None
-    unit = os.path.basename(src)
     shown = subprocess.run(
-        [systemctl, "show", unit, "-p", "LoadState,NeedDaemonReload"],
+        [systemctl, "show", os.path.basename(src), "-p", ",".join(props)],
         capture_output=True,
         text=True,
         check=True,
     ).stdout
-    values = dict(ln.partition("=")[::2] for ln in shown.splitlines())
-    assert values == {"LoadState": "loaded", "NeedDaemonReload": "no"}, (
-        "Fix: sudo systemctl daemon-reload"
-    )
+    return dict(ln.partition("=")[::2] for ln in shown.splitlines())
+
+
+@pytest.mark.parametrize("src", LOADED_UNITS)
+def test_loaded_unit_is_the_installed_one(src: str) -> None:
+    """A copied unit is not a loaded one until ``systemctl daemon-reload``."""
+    assert _show(src, "LoadState", "NeedDaemonReload") == {
+        "LoadState": "loaded",
+        "NeedDaemonReload": "no",
+    }, "Fix: sudo systemctl daemon-reload"
+
+
+@pytest.mark.parametrize("src", ENABLED_UNITS)
+def test_enabled_unit_is_enabled_and_running(src: str) -> None:
+    """Installed and loaded is not running: a timer never enabled passes
+    every check above and never fires, which for the renewal timer is D14's
+    silent expiry."""
+    unit = os.path.basename(src)
+    assert _show(src, "UnitFileState", "ActiveState") == {
+        "UnitFileState": "enabled",
+        "ActiveState": "active",
+    }, f"Fix: sudo systemctl enable --now {unit}"

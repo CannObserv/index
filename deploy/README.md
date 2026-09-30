@@ -178,6 +178,9 @@ uv run pytest tests/deploy/test_installed.py
 keeps reading the old copy. `cp` overwrites it in place, and bash reads a
 script as it runs.
 
+A **new** unit with an `[Install]` section also needs
+`sudo systemctl enable --now <unit>`: installed and loaded, a timer never fires.
+
 `daemon-reload` restarts no container and fires no timer. A changed script
 takes effect at its next start. A change to how Qdrant or Ollama starts
 takes effect at the unit's next restart, which is a separate decision.
