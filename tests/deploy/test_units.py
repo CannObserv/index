@@ -16,12 +16,9 @@ the interval falls back to the default 10 s: with ``RestartSec=5s`` at most
 two starts fit in that window, so a burst of 5 can never trip and a restart
 loop has no bound. ``Restart=always`` relies on that bound.
 
-Tracked in ``deploy/``, installed as:
-
-- ``qdrant.service``, ``ollama.service`` -> ``/etc/systemd/system/``
-
-Pure assertions on the tracked copies run everywhere; installed-parity and live
-assertions skip where the node is not this one, CI included.
+Pure assertions on the tracked copies run everywhere; live assertions skip
+where the units are not loaded, CI included. Installed parity, and the
+daemon-reload that loads it, are ``test_installed.py``'s.
 """
 
 import shutil
@@ -33,7 +30,6 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = REPO_ROOT / "deploy"
 UNITS = ["qdrant.service", "ollama.service"]
-INSTALLED = Path("/etc/systemd/system")
 
 
 def _section(unit: str, name: str) -> dict[str, list[str]]:
@@ -125,21 +121,6 @@ def test_ignore_check_sees_a_misplaced_key_and_section(tmp_path: Path) -> None:
 @pytest.mark.parametrize("unit", UNITS)
 def test_systemd_ignores_no_key(unit: str) -> None:
     assert _ignored_by_systemd(DEPLOY / unit) == []
-
-
-@pytest.mark.parametrize("unit", UNITS)
-def test_installed_copy_matches_tracked(unit: str) -> None:
-    try:
-        installed = (INSTALLED / unit).read_text()
-    except FileNotFoundError:
-        pytest.skip(f"{INSTALLED / unit} not installed on this host")
-    assert installed == (DEPLOY / unit).read_text()
-
-
-@pytest.mark.parametrize("unit", UNITS)
-def test_loaded_unit_is_the_installed_one(unit: str) -> None:
-    """A copied file is not a loaded one until ``systemctl daemon-reload``."""
-    assert _show(unit, "NeedDaemonReload")["NeedDaemonReload"] == "no"
 
 
 @pytest.mark.parametrize("unit", UNITS)

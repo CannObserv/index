@@ -9,12 +9,9 @@ through ``Requires=docker.service``, outside any approved window. The drop-in
 makes the answer independent of whether ``NEEDRESTART_MODE=l`` survives every
 process between the operator and the hook. Shape from CannObserv/notifier#91.
 
-Tracked in ``deploy/``, installed as:
-
-- ``needrestart.conf.d/index.conf`` -> ``/etc/needrestart/conf.d/``
-
-Pure assertions on the tracked copy run everywhere; installed-parity and live
-assertions skip where the node is not this one, CI included.
+Pure assertions on the tracked copy run everywhere; the live assertion skips
+where the drop-in is not installed, CI included. Installed parity is
+``test_installed.py``'s.
 """
 
 import shutil
@@ -66,14 +63,6 @@ def test_dropin_sets_nothing_else() -> None:
         if ln.strip() and not ln.strip().startswith("#")
     ]
     assert lines == ["$nrconf{restart} = 'l';"]
-
-
-def test_installed_copy_matches_tracked() -> None:
-    try:
-        installed = INSTALLED.read_text()
-    except FileNotFoundError:
-        pytest.skip(f"{INSTALLED} not installed on this host")
-    assert installed == DROPIN.read_text()
 
 
 def test_live_config_chain_resolves_to_list_only() -> None:
