@@ -164,7 +164,8 @@ Removing the stock image and pruning reclaimed **8.8 GB** (14 G → 5.2 G used).
 ## Installing a change
 
 Every file in `deploy/` except this README, `setup.sh.template` and
-`ollama-slim/Dockerfile` is installed as a file. After any change to `deploy/`:
+`ollama-slim/Dockerfile` is installed as a file. After any change to `deploy/`,
+from the checkout's root:
 
 ```bash
 sudo install -m 755 deploy/*.sh /usr/local/bin/
