@@ -188,5 +188,7 @@ takes effect at the unit's next restart, which is a separate decision.
 
 `test_installed.py` maps every tracked file in `deploy/` to its install path.
 On co-index it fails on any file that differs, is missing, has the wrong mode
-or owner, or is not loaded, and prints the command that fixes it. A new file in
-`deploy/` fails it everywhere, CI included, until it is added to the mapping.
+or owner, or is not loaded, and on any unit with `[Install]` that is not enabled
+and running, and prints the command that fixes it. Everywhere, CI included, it
+fails on a new file in `deploy/` until the file is mapped, and on install lines
+above that no longer install exactly what is mapped.
