@@ -14,9 +14,12 @@ StartLimitIntervalSec=600
 Type=exec
 ExecStart=/usr/local/bin/ollama-run.sh
 ExecStop=/usr/bin/docker stop --timeout 30 ollama
-# always, not on-failure: Ollama exits 0 on SIGTERM, so under on-failure an
-# out-of-band `docker stop ollama` ended the unit for good (#5). An explicit
-# stop never restarts under either; the start limit in [Unit] bounds a loop.
+# always, not on-failure: Ollama exits 0 on SIGTERM (socraticode/ollama-slim,
+# measured 2026-09-30), so under on-failure an out-of-band `docker stop ollama`
+# ended the unit for good (#5). An explicit stop never restarts under either;
+# the start limit in [Unit] bounds a loop. Under always the restart no longer
+# depends on that 0: were a rebuild to exit 143, only a clean `systemctl stop`
+# would change, recorded as failed as Qdrant's was (#4).
 Restart=always
 RestartSec=5s
 
