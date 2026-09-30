@@ -36,12 +36,13 @@ ExecStop=/usr/bin/docker stop --timeout 30 qdrant
 
 # Qdrant exits 128+15 on SIGTERM and `docker run` passes it through, so without
 # this a clean `systemctl stop` leaves the unit failed (#4). Ollama exits 0,
-# and needs Restart=always for the same out-of-band case (#5).
+# so ollama.service needs no such line.
 SuccessExitStatus=143
 
 # always, not on-failure: with 143 a success, on-failure would stop restarting
 # after an out-of-band SIGTERM (`docker stop qdrant`). An explicit stop never
-# restarts under either; the start limit in [Unit] bounds a loop.
+# restarts under either; the start limit in [Unit] bounds a loop. Ollama's
+# clean exit needs the same, for the same case (#5).
 Restart=always
 RestartSec=5s
 
