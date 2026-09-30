@@ -9,6 +9,12 @@ it would also stop the restart after an **out-of-band** SIGTERM (``docker stop
 qdrant``), which 143 is what triggers today. ``Restart=always`` keeps that
 restart; an explicit stop never restarts under either.
 
+**The start limit is read where systemd reads it.** ``StartLimitIntervalSec=``
+is a ``[Unit]`` key. In ``[Service]`` systemd ignores it with a warning, and
+the interval falls back to the default 10 s: with ``RestartSec=5s`` at most
+two starts fit in that window, so a burst of 5 can never trip and a restart
+loop has no bound. ``Restart=always`` relies on that bound.
+
 Tracked in ``deploy/``, installed as:
 
 - ``qdrant.service``, ``ollama.service`` -> ``/etc/systemd/system/``
@@ -79,6 +85,30 @@ def test_qdrant_restarts_on_out_of_band_sigterm() -> None:
 
 
 @pytest.mark.parametrize("unit", UNITS)
+def test_start_limit_is_in_unit_section(unit: str) -> None:
+    unit_keys = _section(unit, "Unit")
+    assert unit_keys.get("StartLimitBurst") == ["5"]
+    assert unit_keys.get("StartLimitIntervalSec") == ["600"]
+    assert not {"StartLimitBurst", "StartLimitIntervalSec"} & _section(unit, "Service").keys()
+
+
+@pytest.mark.parametrize("unit", UNITS)
+def test_systemd_ignores_no_key(unit: str) -> None:
+    """``systemd-analyze verify`` also fails on an ExecStart= that is not
+    installed, as in CI, so only its unknown-key warnings are asserted."""
+    analyze = shutil.which("systemd-analyze")
+    if analyze is None:
+        pytest.skip("systemd-analyze not available on this host")
+    verify = subprocess.run(
+        [analyze, "verify", str(DEPLOY / unit)],
+        capture_output=True,
+        text=True,
+    )
+    ignored = [ln for ln in verify.stderr.splitlines() if "ignoring" in ln]
+    assert ignored == []
+
+
+@pytest.mark.parametrize("unit", UNITS)
 def test_installed_copy_matches_tracked(unit: str) -> None:
     try:
         installed = (INSTALLED / unit).read_text()
@@ -97,3 +127,10 @@ def test_loaded_qdrant_has_the_tracked_exit_handling() -> None:
     shown = _show("qdrant.service", "Restart", "SuccessExitStatus")
     assert shown["Restart"] == "always"
     assert "143" in shown["SuccessExitStatus"].split()
+
+
+@pytest.mark.parametrize("unit", UNITS)
+def test_loaded_start_limit_is_the_tracked_one(unit: str) -> None:
+    shown = _show(unit, "StartLimitBurst", "StartLimitIntervalUSec")
+    assert shown["StartLimitBurst"] == "5"
+    assert shown["StartLimitIntervalUSec"] == "10min"

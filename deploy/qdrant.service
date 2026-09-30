@@ -18,6 +18,17 @@ After=network.target tailscaled.service docker.service
 # Stating it is honest rather than propagating something that would not.
 Requires=docker.service
 
+# Sized against tailnet-bind.sh's 60s wait: five starts at 5s apart cannot
+# outrun a single 60s wait, so a slow tailnet at boot burns one start, not the
+# budget. observo#473 is the failure this bounds -- a transient that leaves the
+# unit failed until someone runs `systemctl reset-failed`.
+#
+# [Unit], not [Service]: there systemd ignores StartLimitIntervalSec= and falls
+# back to 10s, which a burst of 5 at RestartSec=5s never fills, so the loop was
+# unbounded.
+StartLimitBurst=5
+StartLimitIntervalSec=600
+
 [Service]
 Type=exec
 ExecStart=/usr/local/bin/qdrant-run.sh
@@ -29,16 +40,9 @@ SuccessExitStatus=143
 
 # always, not on-failure: with 143 a success, on-failure would stop restarting
 # after an out-of-band SIGTERM (`docker stop qdrant`). An explicit stop never
-# restarts under either; the start limit below bounds a loop.
+# restarts under either; the start limit in [Unit] bounds a loop.
 Restart=always
 RestartSec=5s
-
-# Sized against tailnet-bind.sh's 60s wait: five starts at 5s apart cannot
-# outrun a single 60s wait, so a slow tailnet at boot burns one start, not the
-# budget. observo#473 is the failure this bounds -- a transient that leaves the
-# unit failed until someone runs `systemctl reset-failed`.
-StartLimitBurst=5
-StartLimitIntervalSec=600
 
 [Install]
 WantedBy=multi-user.target

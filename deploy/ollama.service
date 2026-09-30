@@ -6,14 +6,16 @@ Documentation=https://github.com/CannObserv/notifier/issues/57
 After=network.target tailscaled.service docker.service
 Requires=docker.service
 
+# [Unit], not [Service]: qdrant.service says why.
+StartLimitBurst=5
+StartLimitIntervalSec=600
+
 [Service]
 Type=exec
 ExecStart=/usr/local/bin/ollama-run.sh
 ExecStop=/usr/bin/docker stop --timeout 30 ollama
 Restart=on-failure
 RestartSec=5s
-StartLimitBurst=5
-StartLimitIntervalSec=600
 
 [Install]
 WantedBy=multi-user.target
