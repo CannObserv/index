@@ -48,11 +48,14 @@ INSTALL: dict[str, tuple[Path, int] | None] = {
 INSTALLED = {src: dest for src, dest in INSTALL.items() if dest is not None}
 LOADED_UNITS = [src for src in INSTALLED if src.endswith((".service", ".timer"))]
 # A unit with [Install] is started by being enabled; one without (the timers'
-# oneshot services) is started by its timer.
+# oneshot services) is started by its timer. An entry whose file is gone is
+# left to test_every_entry_is_a_deploy_file: reading it here would fail
+# collection, and every test in this module with it.
 ENABLED_UNITS = [
     src
     for src in LOADED_UNITS
-    if "[Install]" in (REPO_ROOT / "deploy" / src).read_text().splitlines()
+    if (REPO_ROOT / "deploy" / src).exists()
+    and "[Install]" in (REPO_ROOT / "deploy" / src).read_text().splitlines()
 ]
 
 
