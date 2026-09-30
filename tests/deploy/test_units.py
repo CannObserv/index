@@ -1,13 +1,14 @@
 """Drift tests for the long-running units, qdrant.service and ollama.service.
 
-**A clean stop is a success, and Qdrant still restarts (#4).** The qdrant
+**A clean stop is a success, and both still restart (#4, #5).** The qdrant
 container exits 128+15 on SIGTERM and ``docker run`` passes that through, so
 ``systemctl stop qdrant`` left the unit ``failed`` with ``ExecMainStatus=143``
-although Qdrant shut down cleanly. Ollama's container exits 0 and never showed
-it. ``SuccessExitStatus=143`` fixes the record, but under ``Restart=on-failure``
-it would also stop the restart after an **out-of-band** SIGTERM (``docker stop
-qdrant``), which 143 is what triggers today. ``Restart=always`` keeps that
-restart; an explicit stop never restarts under either.
+although Qdrant shut down cleanly. ``SuccessExitStatus=143`` fixes the record,
+but under ``Restart=on-failure`` it would also stop the restart after an
+**out-of-band** SIGTERM (``docker stop qdrant``), which 143 was what triggered.
+Ollama's container exits 0 on SIGTERM, so under ``on-failure`` that same
+out-of-band stop was already final for it. ``Restart=always`` restarts both;
+an explicit stop never restarts under either.
 
 **The start limit is read where systemd reads it.** ``StartLimitIntervalSec=``
 is a ``[Unit]`` key. In ``[Service]`` systemd ignores it with a warning, and
@@ -78,10 +79,12 @@ def test_qdrant_clean_stop_exit_is_success() -> None:
     assert "143" in statuses
 
 
-def test_qdrant_restarts_on_out_of_band_sigterm() -> None:
-    """With 143 a success, ``on-failure`` would no longer restart after an
-    out-of-band SIGTERM. ``always`` does; an explicit stop still does not."""
-    assert _section("qdrant.service", "Service").get("Restart") == ["always"]
+@pytest.mark.parametrize("unit", UNITS)
+def test_restarts_on_out_of_band_sigterm(unit: str) -> None:
+    """A SIGTERM exit is a success for both, so ``on-failure`` would not
+    restart after an out-of-band one. ``always`` does; an explicit stop still
+    does not."""
+    assert _section(unit, "Service").get("Restart") == ["always"]
 
 
 @pytest.mark.parametrize("unit", UNITS)
@@ -139,10 +142,13 @@ def test_loaded_unit_is_the_installed_one(unit: str) -> None:
     assert _show(unit, "NeedDaemonReload")["NeedDaemonReload"] == "no"
 
 
-def test_loaded_qdrant_has_the_tracked_exit_handling() -> None:
-    shown = _show("qdrant.service", "Restart", "SuccessExitStatus")
-    assert shown["Restart"] == "always"
-    assert "143" in shown["SuccessExitStatus"].split()
+@pytest.mark.parametrize("unit", UNITS)
+def test_loaded_restart_is_the_tracked_one(unit: str) -> None:
+    assert _show(unit, "Restart")["Restart"] == "always"
+
+
+def test_loaded_qdrant_has_the_tracked_exit_status() -> None:
+    assert "143" in _show("qdrant.service", "SuccessExitStatus")["SuccessExitStatus"].split()
 
 
 @pytest.mark.parametrize("unit", UNITS)

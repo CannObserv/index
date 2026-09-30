@@ -14,7 +14,10 @@ StartLimitIntervalSec=600
 Type=exec
 ExecStart=/usr/local/bin/ollama-run.sh
 ExecStop=/usr/bin/docker stop --timeout 30 ollama
-Restart=on-failure
+# always, not on-failure: Ollama exits 0 on SIGTERM, so under on-failure an
+# out-of-band `docker stop ollama` ended the unit for good (#5). An explicit
+# stop never restarts under either; the start limit in [Unit] bounds a loop.
+Restart=always
 RestartSec=5s
 
 [Install]
