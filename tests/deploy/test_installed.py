@@ -6,10 +6,12 @@ units and the needrestart drop-in. On 2026-09-30, 9 of the other installed
 files had drifted from ``deploy/``: comments and ``Description=`` only, but
 behavioural changes would have drifted the same way, with no warning.
 
-``INSTALL`` below is the single mapping. Two tests run everywhere, CI included:
-a tracked file with no entry fails, and so does an entry with no tracked file,
-so a new deploy file cannot be left out of the mapping. The parity tests run on
-co-index only, where a mapped file that is missing is a failure, not a skip.
+``INSTALL`` below is the single mapping. Three tests run everywhere, CI
+included: a tracked file with no entry fails, and so does an entry with no
+tracked file, so a new deploy file cannot be left out of the mapping; and the
+runbook's install lines must install exactly what is mapped. The parity tests
+run on co-index only, where a mapped file that is missing is a failure, not a
+skip, and a unit with ``[Install]`` must also be enabled and running.
 """
 
 import os
