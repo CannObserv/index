@@ -22,7 +22,15 @@ Requires=docker.service
 Type=exec
 ExecStart=/usr/local/bin/qdrant-run.sh
 ExecStop=/usr/bin/docker stop --timeout 30 qdrant
-Restart=on-failure
+
+# Qdrant exits 128+15 on SIGTERM and `docker run` passes it through, so without
+# this a clean `systemctl stop` leaves the unit failed (#4). Ollama exits 0.
+SuccessExitStatus=143
+
+# always, not on-failure: with 143 a success, on-failure would stop restarting
+# after an out-of-band SIGTERM (`docker stop qdrant`). An explicit stop never
+# restarts under either; the start limit below bounds a loop.
+Restart=always
 RestartSec=5s
 
 # Sized against tailnet-bind.sh's 60s wait: five starts at 5s apart cannot
