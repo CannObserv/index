@@ -92,20 +92,36 @@ def test_start_limit_is_in_unit_section(unit: str) -> None:
     assert not {"StartLimitBurst", "StartLimitIntervalSec"} & _section(unit, "Service").keys()
 
 
-@pytest.mark.parametrize("unit", UNITS)
-def test_systemd_ignores_no_key(unit: str) -> None:
-    """``systemd-analyze verify`` also fails on an ExecStart= that is not
-    installed, as in CI, so only its unknown-key warnings are asserted."""
+def _ignored_by_systemd(path: Path) -> list[str]:
+    """What ``systemd-analyze verify`` reports it ignores in ``path``.
+
+    ``verify`` also fails on an ExecStart= that is not installed, as in CI, so
+    its exit status says nothing here; only the ignore warnings are read. They
+    are cased both ways: ``..., ignoring.`` for a key, ``. Ignoring.`` for a
+    section.
+    """
     analyze = shutil.which("systemd-analyze")
     if analyze is None:
         pytest.skip("systemd-analyze not available on this host")
-    verify = subprocess.run(
-        [analyze, "verify", str(DEPLOY / unit)],
-        capture_output=True,
-        text=True,
+    verify = subprocess.run([analyze, "verify", str(path)], capture_output=True, text=True)
+    return [ln for ln in verify.stderr.splitlines() if "ignoring" in ln.lower()]
+
+
+def test_ignore_check_sees_a_misplaced_key_and_section(tmp_path: Path) -> None:
+    """The control: without it, a ``verify`` that stops early, or rewords its
+    warnings, passes every unit below without checking anything."""
+    bad = tmp_path / "bad.service"
+    bad.write_text(
+        "[Unit]\n[Bogus]\nKey=1\n[Service]\nExecStart=/bin/true\nStartLimitIntervalSec=600\n"
     )
-    ignored = [ln for ln in verify.stderr.splitlines() if "ignoring" in ln]
-    assert ignored == []
+    ignored = _ignored_by_systemd(bad)
+    assert any("StartLimitIntervalSec" in ln for ln in ignored)
+    assert any("Bogus" in ln for ln in ignored)
+
+
+@pytest.mark.parametrize("unit", UNITS)
+def test_systemd_ignores_no_key(unit: str) -> None:
+    assert _ignored_by_systemd(DEPLOY / unit) == []
 
 
 @pytest.mark.parametrize("unit", UNITS)
