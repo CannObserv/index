@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # D10: report this host's liveness to co-status's dead-man's timer (notifier#56, notifier#83).
 #
-# The point is not this script's findings. It is that notifier alerts when this
+# The point is not this script's findings. It is that co-status alerts when this
 # script STOPS running at all -- notifier#57's second argument is that the last
 # SocratiCode install died silently for nine days because the only thing
 # watching it reported into a log nobody read. A store whose absence is an
