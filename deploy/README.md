@@ -132,8 +132,12 @@ again in ten minutes, a missed renewal window closes for good.
 |---|---|
 | `setup.sh.template` | first-boot script; `__TAILSCALE_KEY__` substituted at provision time. Joins the tailnet and nothing else. |
 | `ollama-slim/Dockerfile` | CPU-only Ollama, 221 MB against 9.19 GB, embeddings bitwise identical to the stock image (CannObserv/replicator#88). |
-| `qdrant.service`, `ollama.service` | the long-running units. A clean `systemctl stop qdrant` records success (`SuccessExitStatus=143`) and an out-of-band SIGTERM (`docker stop qdrant`) still restarts it (`Restart=always`, #4). Ollama exits 0 on SIGTERM and has `Restart=always` for the same case (#5). Stop either with `systemctl stop`, which never restarts. The start limit sits in `[Unit]`, the only place systemd reads it. Install a change with `sudo install -m 644 deploy/qdrant.service deploy/ollama.service /etc/systemd/system/ && sudo systemctl daemon-reload`: the reload restarts no container, and `uv run pytest tests/deploy/test_units.py` fails until the loaded units match the tracked ones. |
-| `needrestart.conf.d/index.conf` | needrestart lists restarts and never performs them (#2), so an apt run cannot bounce Docker, and Qdrant and Ollama with it. Install before any apt run: `sudo install -D -m 644 deploy/needrestart.conf.d/index.conf /etc/needrestart/conf.d/index.conf`, then `sudo needrestart -m u -r l -b` prints `Disabling Ubuntu mode` and restarts nothing. |
+| `qdrant.service`, `ollama.service` | the long-running units. A clean `systemctl stop qdrant` records success (`SuccessExitStatus=143`) and an out-of-band SIGTERM (`docker stop qdrant`) still restarts it (`Restart=always`, #4). Ollama exits 0 on SIGTERM and has `Restart=always` for the same case (#5). Stop either with `systemctl stop`, which never restarts. The start limit sits in `[Unit]`, the only place systemd reads it. |
+| `qdrant-run.sh`, `ollama-run.sh` | their `ExecStart=`: `docker run` with the publish bound to the tailnet address only (D3). |
+| `tailnet-bind.sh` | prints this node's tailnet address, waiting up to 60 s for `tailscaled` to assign one. Called by both run scripts and the check-in. |
+| `qdrant-cert-renew.{sh,service,timer}` | weekly TLS renewal (D14, above). |
+| `index-checkin.{sh,service,timer}` | every 10 min, reports to co-status's dead-man's timer (D10). |
+| `needrestart.conf.d/index.conf` | needrestart lists restarts and never performs them (#2), so an apt run cannot bounce Docker, and Qdrant and Ollama with it. Install it before any apt run. `sudo needrestart -m u -r l -b` then prints `Disabling Ubuntu mode` and restarts nothing. |
 
 **On `co-index` the image keeps its own tag, `socraticode/ollama-slim:latest`.**
 replicator#88 records that the `ollama/ollama:latest` tag is load-bearing,
@@ -157,8 +161,28 @@ images' embeddings are **bitwise identical** (`max abs diff 0.0`, cosine 1.0).
 So the slim image is not a backend change and fragments nothing under D7.
 Removing the stock image and pruning reclaimed **8.8 GB** (14 G → 5.2 G used).
 
-## Not here yet
+## Installing a change
 
-The systemd units, the Qdrant volume, and D10's check-in timer are Phase 3.
-They are written against the host once it exists: a unit authored against an
-unbuilt machine is a unit that does not match it.
+Every file in `deploy/` except this README, `setup.sh.template` and
+`ollama-slim/Dockerfile` is installed as a file. After any change to `deploy/`:
+
+```bash
+sudo install -m 755 deploy/*.sh /usr/local/bin/
+sudo install -m 644 deploy/*.service deploy/*.timer /etc/systemd/system/
+sudo install -D -m 644 deploy/needrestart.conf.d/index.conf /etc/needrestart/conf.d/index.conf
+sudo systemctl daemon-reload
+uv run pytest tests/deploy/test_installed.py
+```
+
+**`install`, never `cp`.** `install` replaces the file, so a running script
+keeps reading the old copy. `cp` overwrites it in place, and bash reads a
+script as it runs.
+
+`daemon-reload` restarts no container and fires no timer. A changed script
+takes effect at its next start. A change to how Qdrant or Ollama starts
+takes effect at the unit's next restart, which is a separate decision.
+
+`test_installed.py` maps every tracked file in `deploy/` to its install path.
+On co-index it fails on any file that differs, is missing, has the wrong mode
+or owner, or is not loaded, and prints the command that fixes it. A new file in
+`deploy/` fails it everywhere, CI included, until it is added to the mapping.
