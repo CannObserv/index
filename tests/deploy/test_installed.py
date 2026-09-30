@@ -69,6 +69,25 @@ def _tracked() -> set[str]:
     return {line.removeprefix("deploy/") for line in listed.splitlines()}
 
 
+def _runbook_installs() -> dict[str, tuple[Path, int]]:
+    """What the runbook's ``sudo install`` lines install, as ``INSTALLED``
+    maps it: sources globbed from the repo root, a destination ending ``/``
+    taking each source's name."""
+    found: dict[str, tuple[Path, int]] = {}
+    for line in (REPO_ROOT / "deploy" / "README.md").read_text().splitlines():
+        words = line.split()
+        if words[:2] != ["sudo", "install"]:
+            continue
+        args = words[2:]
+        mode = int(args[args.index("-m") + 1], 8)
+        *patterns, dest = [a for i, a in enumerate(args) if a[0] != "-" and args[i - 1] != "-m"]
+        for pattern in patterns:
+            for match in sorted(REPO_ROOT.glob(pattern)):
+                target = Path(dest) / match.name if dest.endswith("/") else Path(dest)
+                found[match.relative_to(REPO_ROOT / "deploy").as_posix()] = (target, mode)
+    return found
+
+
 def _on_host() -> None:
     if socket.gethostname() != HOST:
         pytest.skip(f"not {HOST}")
@@ -88,6 +107,13 @@ def test_every_deploy_file_has_an_entry() -> None:
 
 def test_every_entry_is_a_deploy_file() -> None:
     assert INSTALL.keys() - _tracked() == set()
+
+
+def test_runbook_installs_what_is_mapped() -> None:
+    """The runbook's install lines are the procedure, and ``INSTALL`` is what
+    it is checked against: a glob that sweeps up an uninstalled file, or a
+    mapped file no line reaches, splits them."""
+    assert _runbook_installs() == INSTALLED
 
 
 @pytest.mark.parametrize("src", sorted(INSTALLED))
