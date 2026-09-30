@@ -17,7 +17,7 @@
 #   2. Time out non-zero. There is nothing safe to fall back to: a store bound
 #      to 0.0.0.0 is reachable from the exe.dev internal network, which is the
 #      whole thing the tailnet-only bind exists to prevent. Exhausting the wait
-#      fails the start and lets Restart=on-failure retry.
+#      fails the start and lets the unit's Restart= retry.
 #
 # DELIBERATELY NO ESCAPE-HATCH VARIABLE. notifier's copy carries
 # NOTIFIER_BIND_HOST for CI, which has no tailnet, and pays for it with a test
