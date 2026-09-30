@@ -55,7 +55,7 @@ ENABLED_UNITS = [
     src
     for src in LOADED_UNITS
     if (REPO_ROOT / "deploy" / src).exists()
-    and "[Install]" in (REPO_ROOT / "deploy" / src).read_text().splitlines()
+    and "[Install]" in (ln.strip() for ln in (REPO_ROOT / "deploy" / src).read_text().splitlines())
 ]
 
 
