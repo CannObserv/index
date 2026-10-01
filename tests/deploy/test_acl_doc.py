@@ -4,7 +4,9 @@
 check-in from notifier to co-status, and ``index-checkin.sh`` followed, but
 both ACL blocks kept ``tag:index -> tag:notifier:9000`` for a month while the
 live policy carried both edges. Only the rule's ``dst`` tracks the script, so
-this reads the host from the script rather than pinning ``status`` again.
+this reads the host from the script rather than pinning ``status`` again. It
+relies on the cohort's convention that a node's tag is its host name
+(``status`` is ``tag:status``); this asserts the docs, not that convention.
 
 **The store's clients are listed once, in D17, and both blocks agree with it.**
 The live policy opened ``:6333,11434`` to every cohort VM while the docs named
