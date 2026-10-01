@@ -11,9 +11,9 @@
 # -- that division is the API boundary this service refuses to cross.
 set -euo pipefail
 
-set -a
+# Sourced, not exported: they go to co-status as arguments, and no probe below
+# needs them in its environment.
 . /etc/socraticode/status.env
-set +a
 
 # Both, before any probe: the file is written by hand, and an empty key would
 # otherwise go out as an empty header, a 401 that exits 0.

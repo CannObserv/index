@@ -50,11 +50,14 @@ def host(tmp_path: Path) -> Path:
     bin_dir.mkdir()
     _stub(bin_dir / "tailnet-bind.sh", "echo 100.64.0.1\n")
     _stub(bin_dir / "openssl", "echo 'notAfter=Jan  1 00:00:00 2099 GMT'\n")
-    # One line per call. The check-in's body arrives on stdin, and is drained
-    # so the pipe into it never breaks.
+    # One line per call, plus any credential name it was handed in its
+    # environment. The check-in's body arrives on stdin, and is drained so the
+    # pipe into it never breaks.
     _stub(
         bin_dir / "curl",
-        'printf "%s\\n" "$*" >> "$CURL_LOG"\n[[ " $* " != *" @- "* ]] || cat > /dev/null\n',
+        'printf "%s\\n" "$*" >> "$CURL_LOG"\n'
+        'env | grep -o "^STATUS_[A-Z_]*" >> "$CURL_LOG.env" || true\n'
+        '[[ " $* " != *" @- "* ]] || cat > /dev/null\n',
     )
     return tmp_path
 
@@ -98,6 +101,14 @@ def test_checks_in_with_the_status_credentials(host: Path) -> None:
     [checkin] = _checkins(host)
     assert f"http://status:9000/api/v1/monitors/{MONITOR}/checkin" in checkin
     assert f"X-API-Key: {KEY}" in checkin
+
+
+def test_no_child_process_is_handed_the_credentials(host: Path) -> None:
+    """They go to co-status as arguments. Exported, they would also sit in the
+    environment of every probe, none of which reads them."""
+    _write(host, "status.env", STATUS_ENV)
+    assert _run(host).returncode == 0
+    assert (host / "curl.log.env").read_text() == ""
 
 
 def test_notifier_env_alone_does_not_check_in(host: Path) -> None:
