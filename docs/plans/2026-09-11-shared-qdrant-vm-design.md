@@ -182,7 +182,7 @@ amended in Phase 5, not left standing.
 
 **Since D16 (removed 2026-10-01, CannObserv/index#7) the second half no longer
 holds:** `index` has no edge to notifier. notifier's edge to `index` stands, as
-one of D17's store clients.
+one of D17's store clients. (notifier's copy: CannObserv/notifier#98.)
 
 ### What is centralized, and what is not
 
