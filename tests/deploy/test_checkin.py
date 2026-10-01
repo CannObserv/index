@@ -13,6 +13,8 @@ are co-status's credentials, so they are named for it: ``STATUS_API_KEY`` and
 - **Both values are checked before anything is probed.** The file is written
   by hand at cutover, which is when a misnamed key happens. An empty key is
   otherwise sent as an empty header: a 401 that exits 0.
+- **The credentials are sourced, not exported.** No probe reads them, so
+  none is handed them in its environment.
 - **No key is on curl's argv.** co-index's /proc has no hidepid, so an
   argument is readable by every user there while the call runs. Each key goes
   in a header file from a process substitution.
