@@ -96,6 +96,7 @@ def _run(host: Path) -> subprocess.CompletedProcess[str]:
             **inherited,
             "PATH": f"{host / 'bin'}:{os.environ['PATH']}",
             "CURL_LOG": str(host / "curl.log"),
+            "LC_ALL": "C",  # bash's own errors, asserted below, are translated
         },
         capture_output=True,
         text=True,
