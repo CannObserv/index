@@ -11,8 +11,7 @@
 # -- that division is the API boundary this service refuses to cross.
 set -euo pipefail
 
-# Sourced, not exported: they go to co-status as arguments, and no probe below
-# needs them in its environment.
+# Sourced, not exported: no probe below needs them in its environment.
 . /etc/socraticode/status.env
 
 # Both, before any probe: the file is written by hand, and an empty key would
@@ -36,7 +35,12 @@ add() { findings="${findings}${findings:+,}{\"check\":\"$1\",\"subject\":\"$2\",
 # Qdrant answering AND still refusing an unauthenticated read. A store that
 # went open is as much a defect as one that went down, and only one of the two
 # is visible from a plain health check.
-code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "api-key: ${QKEY}" "${QURL}/collections" || echo 000)
+#
+# Every key goes to curl as a header FILE (#8). An argument is readable by
+# every user on this host for as long as the call runs: its /proc has no
+# hidepid. printf is a builtin, so the key is on no process's argv.
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+  -H @<(printf 'api-key: %s\n' "$QKEY") "${QURL}/collections" || echo 000)
 [ "$code" = "200" ] || add qdrant collections "authenticated read returned ${code}"
 open=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${QURL}/collections" || echo 000)
 [ "$open" = "401" ] || add qdrant auth "unauthenticated read returned ${open}, expected 401"
@@ -79,7 +83,7 @@ payload=$(printf '{"status":"%s","variables":{"source":"co-index","finding_count
 # co-status's once co-index had its own repo (#8).
 printf '%s' "$payload" | curl -sS --max-time 20 -X POST \
   "http://status:9000/api/v1/monitors/${STATUS_MONITOR_ID}/checkin" \
-  -H "X-API-Key: ${STATUS_API_KEY}" \
+  -H @<(printf 'X-API-Key: %s\n' "$STATUS_API_KEY") \
   -H 'Content-Type: application/json' \
   --data-binary @- \
   -o /tmp/index-checkin-resp.json -w "index-checkin: %{http_code} sent=${status} findings=${count}\n"

@@ -13,6 +13,9 @@ are co-status's credentials, so they are named for it: ``STATUS_API_KEY`` and
 - **Both values are checked before anything is probed.** The file is written
   by hand at cutover, which is when a misnamed key happens. An empty key is
   otherwise sent as an empty header: a 401 that exits 0.
+- **No key is on curl's argv.** co-index's /proc has no hidepid, so an
+  argument is readable by every user there while the call runs. Each key goes
+  in a header file from a process substitution.
 
 The script runs from a copy whose host paths point into ``tmp_path``, with
 ``curl`` and ``openssl`` stubbed on ``PATH``. Nothing leaves the test, and on
@@ -32,6 +35,7 @@ HOST_PATHS = re.compile(r"/etc/socraticode/|/usr/local/bin/|/tmp/index-checkin-"
 
 KEY = "status-key"
 MONITOR = "01MONITORID"
+QDRANT_KEY = "qdrant-key"
 STATUS_ENV = f"STATUS_API_KEY={KEY}\nSTATUS_MONITOR_ID={MONITOR}\n"
 
 
@@ -44,18 +48,26 @@ def _stub(path: Path, body: str) -> None:
 def host(tmp_path: Path) -> Path:
     """``tmp_path`` laid out as the script's host paths, with no credential file."""
     (tmp_path / "etc" / "socraticode").mkdir(parents=True)
-    (tmp_path / "etc" / "socraticode" / "qdrant.key").write_text("qdrant-key\n")
+    (tmp_path / "etc" / "socraticode" / "qdrant.key").write_text(f"{QDRANT_KEY}\n")
     (tmp_path / "tmp").mkdir()
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     _stub(bin_dir / "tailnet-bind.sh", "echo 100.64.0.1\n")
     _stub(bin_dir / "openssl", "echo 'notAfter=Jan  1 00:00:00 2099 GMT'\n")
-    # One line per call, plus any credential name it was handed in its
-    # environment. The check-in's body arrives on stdin, and is drained so the
-    # pipe into it never breaks.
+    # One line per call in each log: its argv as `ps` shows it, and what it
+    # was sent, with each `-H @file` read. Plus any credential name it was
+    # handed in its environment. The check-in's body arrives on stdin, and is
+    # drained so the pipe into it never breaks.
     _stub(
         bin_dir / "curl",
         'printf "%s\\n" "$*" >> "$CURL_LOG"\n'
+        "sent=() prev=\n"
+        'for a in "$@"; do\n'
+        '  if [[ $prev == -H && $a == @* ]]; then a="$(cat "${a#@}")"; fi\n'
+        '  sent+=("$a")\n'
+        "  prev=$a\n"
+        "done\n"
+        'printf "%s\\n" "${sent[*]}" >> "$CURL_LOG.sent"\n'
         'env | grep -o "^STATUS_[A-Z_]*" >> "$CURL_LOG.env" || true\n'
         '[[ " $* " != *" @- "* ]] || cat > /dev/null\n',
     )
@@ -106,7 +118,8 @@ def test_the_copy_reaches_no_host_path() -> None:
 
 
 def _checkins(host: Path) -> list[str]:
-    log = host / "curl.log"
+    """The check-in calls, as sent."""
+    log = host / "curl.log.sent"
     calls = log.read_text().splitlines() if log.exists() else []
     return [call for call in calls if "/checkin" in call]
 
@@ -118,6 +131,18 @@ def test_checks_in_with_the_status_credentials(host: Path) -> None:
     [checkin] = _checkins(host)
     assert f"http://status:9000/api/v1/monitors/{MONITOR}/checkin" in checkin
     assert f"X-API-Key: {KEY}" in checkin
+
+
+def test_no_credential_is_on_curls_argv(host: Path) -> None:
+    """argv is readable by every user on co-index, whose /proc has no hidepid,
+    for as long as the call runs. The keys go in header files instead."""
+    _write(host, "status.env", STATUS_ENV)
+    assert _run(host).returncode == 0
+    argv = (host / "curl.log").read_text()
+    sent = (host / "curl.log.sent").read_text()
+    for secret in (KEY, QDRANT_KEY):
+        assert secret in sent, "the control: curl was handed it"
+        assert secret not in argv
 
 
 def test_no_child_process_is_handed_the_credentials(host: Path) -> None:
