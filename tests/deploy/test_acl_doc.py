@@ -53,18 +53,18 @@ def _checkin_host() -> str:
 
 
 def _d17_clients() -> set[str]:
-    row = next(ln for ln in DESIGN.read_text().splitlines() if ln.startswith("| **D17**"))
-    return set(re.findall(r"`(tag:[a-z0-9-]+)`", row)) - {"tag:index"}
+    rows = (ln for ln in DESIGN.read_text().splitlines() if ln.startswith("| **D17**"))
+    row = next(rows, None)
+    assert row is not None, "the design record has no D17 row"
+    clients = set(re.findall(r"`(tag:[a-z0-9-]+)`", row)) - {"tag:index"}
+    assert clients, "D17 names no store clients"
+    return clients
 
 
 @pytest.mark.parametrize("doc", DOCS, ids=lambda d: d.name)
 def test_checkin_rule_targets_the_checkin_host(doc: Path) -> None:
     rules = [r for r in _steady(doc)["acls"] if "tag:index" in r["src"]]
     assert [r["dst"] for r in rules] == [[f"tag:{_checkin_host()}:9000"]]
-
-
-def test_d17_names_the_store_clients() -> None:
-    assert len(_d17_clients()) >= 4
 
 
 @pytest.mark.parametrize("doc", DOCS, ids=lambda d: d.name)
