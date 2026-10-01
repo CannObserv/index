@@ -53,9 +53,9 @@ exe.dev VM `co-index` (`pdx`, 2 vCPU / 8 GB / 30 GB, proxy `private`), tailnet n
 
 `qdrant.service` and `ollama.service` are `Requires=docker.service`: **restarting Docker restarts both.**
 
-**Where this repo is worked on: `co-index` itself** (D15, which amends D8). One checkout of *this* repo and a token scoped to it. **Never** a client checkout, a client-repo credential, or a Node toolchain on this host (VS Code's private runtime is not one, D15). Nothing here indexes (D11).
+**Where this repo is worked on: `co-index` itself** (D15, which amends D8; D18). One checkout of *this* repo. **Never** a client checkout, a commit to a client repo, or a Node toolchain on this host (VS Code's private runtime is not one, D15). Nothing here indexes (D11).
 
-**Credentials:** `.env` (git-ignored, 0600) holds `GH_TOKEN`, scoped to this repo only. Load with `set -a; . ./.env; set +a`. Push without putting the token in argv or a URL:
+**Credentials:** `.env` (git-ignored, 0600) holds `GH_TOKEN`, scoped to this repo only, and one `GH_TOKEN_<REPO>` per cohort repo, for issues there only (D18): `GH_TOKEN="$GH_TOKEN_NOTIFIER" gh issue create -R CannObserv/notifier …`. Load with `set -a; . ./.env; set +a`. Push without putting the token in argv or a URL:
 
 ```bash
 git -c credential.helper= -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f' push
