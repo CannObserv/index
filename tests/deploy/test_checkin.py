@@ -130,7 +130,9 @@ def test_no_child_process_is_handed_the_credentials(host: Path) -> None:
 
 def test_notifier_env_alone_does_not_check_in(host: Path) -> None:
     _write(host, "notifier.env", f"NOTIFIER_API_KEY={KEY}\nNOTIFIER_MONITOR_ID={MONITOR}\n")
-    assert _run(host).returncode != 0
+    result = _run(host)
+    assert result.returncode == 1
+    assert "status.env: No such file or directory" in result.stderr
     assert _checkins(host) == []
 
 
