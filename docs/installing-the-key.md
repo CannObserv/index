@@ -39,7 +39,7 @@ the key may already be in history — untrack *and* rotate), and **not ignored**
 (add the rule). It asks `git check-ignore` whatever the rule's source, since a
 global `core.excludesfile` genuinely does prevent a commit from that VM. Run from an operator machine, which is the only host
 able to reach both ends (exe.dev VMs are isolated from each other, and D13's
-`tag:index:22` edge was retired after Phase 6):
+`tag:index:22` edge was removed on 2026-09-29):
 
 ```bash
 # 1. a read-only clone of this repo on the target (public: no credential).
