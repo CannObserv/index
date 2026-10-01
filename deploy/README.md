@@ -49,7 +49,9 @@ Steady state. The store's clients are every cohort VM (D17); `tag:index` is a
 Build phase only (D13). Added with the steady state, **removed at the end of
 Phase 3**, together with `--ssh` on the node (`sudo tailscale set --ssh=false`).
 Edge and `ssh` block removed 2026-09-29, `--ssh` 2026-10-01; a rebuild adds all
-three again.
+three again. Removing the rules does not turn `--ssh` off. Check afterwards:
+`tailscale status` prints no health warning, and `tailscale debug prefs` shows
+`"RunSSH": false`.
 
 ```jsonc
 {
