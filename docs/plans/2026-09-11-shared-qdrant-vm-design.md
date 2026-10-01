@@ -4,7 +4,7 @@
 Phase 7 is the cohort's adoption, and needs an explicit go
 **Issue:** [CannObserv/notifier#57](https://github.com/CannObserv/notifier/issues/57)
 **Moved:** from CannObserv/notifier on 2026-09-29, with history (CannObserv/notifier#90).
-D15, D16 and D17 amend D8, D9, D10 and the ACL.
+D15, D16 and D17 amend D8, D9, D10, the ACL and Out of scope.
 **Cohort:** the fifth VM, and the first that is not a service. Pattern from
 [notifier#43](https://github.com/CannObserv/notifier/issues/43); phase spine and
 provisioning lessons from
