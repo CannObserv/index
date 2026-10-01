@@ -88,6 +88,23 @@ def _run(host: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _host_paths(script: str) -> list[str]:
+    """The absolute host paths in ``script``, bar the shebang: the copy runs
+    under ``bash``, never through it."""
+    body = script.split("\n", 1)[1]
+    return re.findall(
+        r"(?<![\w.:/])/(?:etc|var|tmp|usr|run|srv|opt|home|root|proc|sys)/[^\s\"')]*", body
+    )
+
+
+def test_the_copy_reaches_no_host_path() -> None:
+    """Nothing leaves the test only while ``HOST_PATHS`` rewrites every host
+    path. A new one in the script would be read, or written, on the real host."""
+    paths = _host_paths(SCRIPT.read_text())
+    assert "/usr/local/bin/tailnet-bind.sh" in paths, "the scan finds no paths at all"
+    assert [p for p in paths if not HOST_PATHS.match(p)] == []
+
+
 def _checkins(host: Path) -> list[str]:
     log = host / "curl.log"
     calls = log.read_text().splitlines() if log.exists() else []
