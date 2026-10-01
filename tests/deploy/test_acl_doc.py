@@ -34,9 +34,13 @@ STORE_DST = "tag:index:6333,11434"
 
 
 def _blocks(doc: Path) -> list[tuple[str, dict]]:
-    """Every ``jsonc`` block in ``doc``: its raw text, and the JSON it parses to."""
+    """Every ACL policy in ``doc``: its raw text, and the JSON it parses to.
+
+    A ``jsonc`` block without an ``acls`` key is some other example, not a policy.
+    """
     blocks = re.findall(r"```jsonc\n(.*?)```", doc.read_text(), flags=re.S)
-    return [(raw, json.loads(re.sub(r"//[^\n]*", "", raw))) for raw in blocks]
+    parsed = [(raw, json.loads(re.sub(r"//[^\n]*", "", raw))) for raw in blocks]
+    return [(raw, policy) for raw, policy in parsed if "acls" in policy]
 
 
 def _steady(doc: Path) -> dict:
