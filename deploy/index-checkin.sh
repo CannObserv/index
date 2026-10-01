@@ -12,14 +12,17 @@
 set -euo pipefail
 
 set -a
-. /etc/socraticode/notifier.env
+. /etc/socraticode/status.env
 set +a
 
-MONITOR_ID="${NOTIFIER_MONITOR_ID:-}"
-if [ -z "$MONITOR_ID" ]; then
-  echo "index-checkin: NOTIFIER_MONITOR_ID unset in /etc/socraticode/notifier.env" >&2
-  exit 1
-fi
+# Both, before any probe: the file is written by hand, and an empty key would
+# otherwise go out as an empty header, a 401 that exits 0.
+for var in STATUS_MONITOR_ID STATUS_API_KEY; do
+  if [ -z "${!var:-}" ]; then
+    echo "index-checkin: ${var} unset in /etc/socraticode/status.env" >&2
+    exit 1
+  fi
+done
 
 ADDR="$(/usr/local/bin/tailnet-bind.sh)"
 QKEY="$(cat /etc/socraticode/qdrant.key)"
@@ -72,11 +75,11 @@ payload=$(printf '{"status":"%s","variables":{"source":"co-index","finding_count
 
 # co-status took over the dead-man's timers (notifier#83, CannObserv/status#2). Same
 # path, body and monitor id as notifier's; only the host and the key changed.
-# The NOTIFIER_* names in /etc/socraticode/notifier.env are kept so the switch
-# is two values, and are renamed when co-index gets its own repo (notifier#90).
+# The credentials kept notifier's names through that switch, and took
+# co-status's once co-index had its own repo (#8).
 printf '%s' "$payload" | curl -sS --max-time 20 -X POST \
-  "http://status:9000/api/v1/monitors/${MONITOR_ID}/checkin" \
-  -H "X-API-Key: ${NOTIFIER_API_KEY}" \
+  "http://status:9000/api/v1/monitors/${STATUS_MONITOR_ID}/checkin" \
+  -H "X-API-Key: ${STATUS_API_KEY}" \
   -H 'Content-Type: application/json' \
   --data-binary @- \
   -o /tmp/index-checkin-resp.json -w "index-checkin: %{http_code} sent=${status} findings=${count}\n"

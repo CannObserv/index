@@ -154,7 +154,7 @@ again in ten minutes, a missed renewal window closes for good.
 | `qdrant-run.sh`, `ollama-run.sh` | their `ExecStart=`: `docker run` with the publish bound to the tailnet address only (D3). |
 | `tailnet-bind.sh` | prints this node's tailnet address, waiting up to 60 s for `tailscaled` to assign one. Called by both run scripts and the check-in. |
 | `qdrant-cert-renew.{sh,service,timer}` | weekly TLS renewal (D14, above). |
-| `index-checkin.{sh,service,timer}` | every 10 min, reports to co-status's dead-man's timer (D10). |
+| `index-checkin.{sh,service,timer}` | every 10 min, reports to co-status's dead-man's timer (D10). Its credentials are `STATUS_API_KEY` and `STATUS_MONITOR_ID` in `/etc/socraticode/status.env` (`0600 root:root`, never in git); without either it exits 1 before probing anything (#8). |
 | `needrestart.conf.d/index.conf` | needrestart lists restarts and never performs them (#2), so an apt run cannot bounce Docker, and Qdrant and Ollama with it. Install it before any apt run (Installing a change, below). `sudo needrestart -m u -r l -b` then prints `Disabling Ubuntu mode` and restarts nothing. |
 
 **On `co-index` the image keeps its own tag, `socraticode/ollama-slim:latest`.**
