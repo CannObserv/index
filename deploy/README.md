@@ -3,13 +3,13 @@
 Design: [`docs/plans/2026-09-11-shared-qdrant-vm-design.md`](../docs/plans/2026-09-11-shared-qdrant-vm-design.md).
 Issue: [CannObserv/notifier#57](https://github.com/CannObserv/notifier/issues/57).
 
-One VM running Qdrant and Ollama for all four cohort services, so the vector
+One VM running Qdrant and Ollama for every cohort VM (D17), so the vector
 store survives what took the per-VM installs out: everything that vanished
 lived under `$HOME` or in Docker's local state, everything that survived is in
 git.
 
 **Nothing on a production path depends on this host** (D9). An outage degrades
-`codebase_search` on four VMs and stops no service. The degrade is `grep`.
+`codebase_search` on the cohort's VMs and stops no service. The degrade is `grep`.
 
 ## Phase 2 — provisioning
 
@@ -23,22 +23,37 @@ Phase 2 cannot start without them.
 | `EXE_API_TOKEN` | scoped to at least `new` and `whoami`. `ssh exe.dev whoami` from this host returns `Permission denied (publickey)` — there is no registered identity here, so the HTTPS `exec` path is the one available to an agent. |
 | `TAILSCALE_KEY_INDEX` | **single-tag `tag:index`, pre-approved, non-ephemeral, minted before the first join.** A multi-tag key applies all its tags and cannot be narrowed with `--advertise-tags`. Tags bind at registration: `tailscale up --reset` does not retag (notifier#43 F1). |
 
-Also before `new`: confirm `tag:index` is declared in `tagOwners`, and add the
-ACL below. **A peer is visible only through an `acls` rule** — an `ssh` block
-alone leaves the node out of the netmap, where the missing rule presents as a
-DNS failure rather than a permission denial.
+Also before `new`: confirm `tag:index` is declared in `tagOwners`, and add
+both ACL blocks below. **A peer is visible only through an `acls` rule** — an
+`ssh` block alone leaves the node out of the netmap, where the missing rule
+presents as a DNS failure rather than a permission denial.
 
 ### ACL
+
+Steady state. The store's clients are every cohort VM (D17); `tag:index` is a
+`src` in one rule, the check-in to co-status (D10, D16).
 
 ```jsonc
 {
   "tagOwners": { "tag:index": ["autogroup:admin"] },
   "acls": [
     { "action": "accept",
-      "src": ["tag:notifier", "tag:watcher", "tag:archiver", "tag:replicator"],
+      "src": ["tag:notifier", "tag:watcher", "tag:archiver", "tag:replicator",
+              "tag:broker", "tag:status", "tag:observo-primary", "tag:power-map"],
       "dst": ["tag:index:6333,11434"] },
-    { "action": "accept", "src": ["tag:index"], "dst": ["tag:notifier:9000"] },
-    // D13: BUILD PHASE ONLY — removed at the end of Phase 3, with the ssh block.
+    { "action": "accept", "src": ["tag:index"], "dst": ["tag:status:9000"] }
+  ]
+}
+```
+
+Build phase only (D13). Added with the steady state, **removed at the end of
+Phase 3**, together with `--ssh` on the node (`sudo tailscale set --ssh=false`).
+Removed 2026-10-01; a rebuild adds it again.
+
+```jsonc
+{
+  // D13: BUILD PHASE ONLY. Without the acls rule the ssh block is never consulted.
+  "acls": [
     { "action": "accept", "src": ["tag:notifier"], "dst": ["tag:index:22"] }
   ],
   "ssh": [

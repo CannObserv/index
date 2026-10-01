@@ -4,7 +4,7 @@
 Phase 7 is the cohort's adoption, and needs an explicit go
 **Issue:** [CannObserv/notifier#57](https://github.com/CannObserv/notifier/issues/57)
 **Moved:** from CannObserv/notifier on 2026-09-29, with history (CannObserv/notifier#90).
-D15 and D16 amend D8 and D10.
+D15, D16 and D17 amend D8, D9, D10 and the ACL.
 **Cohort:** the fifth VM, and the first that is not a service. Pattern from
 [notifier#43](https://github.com/CannObserv/notifier/issues/43); phase spine and
 provisioning lessons from
@@ -76,10 +76,11 @@ for the citations. Four results move this design:
 | **D10** | **`co-index` checks in to notifier's dead-man's timer (CannObserv/notifier#56)** on a systemd timer. | The second argument in CannObserv/notifier#57 is that a per-VM install fails *silently*. A store whose absence is announced is the fix, and this repo already runs the mechanism. It makes `tag:index` a `src` in exactly one rule — the same amendment `tag:broker` took in broker#3. |
 | **D11** | **One host per `projectId`, enforced by convention.** | The index lock is `os.tmpdir()/socraticode-locks/<projectId>-<op>` — **host-local**. A shared Qdrant gives no shared lock, so two hosts indexing one project write the same collections concurrently with nothing stopping them. Natural under D8; written down so nobody later adds a helpful central re-index cron. |
 | **D14** | **Qdrant serves TLS, and `QDRANT_URL` names the node's full MagicDNS name.** Discovered in Phase 4, 2026-09-12: SocratiCode **refuses** to send `QDRANT_API_KEY` to a non-HTTPS, non-localhost host — *"Refusing to send the API key over a non-TLS connection."* D4 as originally written was therefore not implementable. | Three ways out, and the choice matters. **Dropping the key** contradicts D4's own premise that tailnet-only is not authorization. **A localhost forwarder on each client** is accepted by the guard (a `localhost` URL is exempt) and the hop stays WireGuard-encrypted, but it satisfies a safety check by routing around it and adds a moving part per client VM. **TLS** meets the guard on its own terms. Tailscale's own certs are the cheap form of it — auto-renewing, real chain of trust — and need `DNS → HTTPS Certificates` enabled for the tailnet; the failure when it is off is `your Tailscale account does not support getting TLS certs`, which reads like a plan limit and is not one. Fallback if it truly is unavailable: our own CA plus `NODE_EXTRA_CA_CERTS` on each client. **Consequence for D8's env block:** the URL becomes `https://index.taild0fb76.ts.net:6333`, not `http://index:6333`, because the short MagicDNS name does not match the certificate's SAN. |
-| **D13** | **A temporary `tag:notifier → tag:index:22` admin edge, and `--ssh` at join, both removed at the end of Phase 3.** | D1 says `tag:index` exposes no service port and the host is administered over public `ssh co-index.exe.xyz`. That is the steady state, and it is not reachable from a session on another exe.dev VM — exe.dev VMs are isolated from each other, which is the premise the tailnet exists to answer. Without a build-phase edge there is no host from which to run Phase 3. Replicator#88 D5 is the proven shape, including the trap it names: Tailscale SSH needs **both** an `acls` rule and an `ssh` block — without the network rule the node never appears in the peer's netmap and the `ssh` rule is never consulted, which presents as a DNS failure rather than a permission denial. |
+| **D13** | **A temporary `tag:notifier → tag:index:22` admin edge, and `--ssh` at join, both removed at the end of Phase 3.** **Done 2026-10-01 (CannObserv/index#7):** the edge and the `ssh` block were already gone from the live policy, but `--ssh` was still on at the node, where it showed as a health warning. | D1 says `tag:index` exposes no service port and the host is administered over public `ssh co-index.exe.xyz`. That is the steady state, and it is not reachable from a session on another exe.dev VM — exe.dev VMs are isolated from each other, which is the premise the tailnet exists to answer. Without a build-phase edge there is no host from which to run Phase 3. Replicator#88 D5 is the proven shape, including the trap it names: Tailscale SSH needs **both** an `acls` rule and an `ssh` block — without the network rule the node never appears in the peer's netmap and the `ssh` rule is never consulted, which presents as a DNS failure rather than a permission denial. |
 | **D12** | **`QDRANT_COLLECTION_PREFIX` is never set, and `SOCRATICODE_BRANCH_AWARE` is never `"true"`.** Asserted by a test, like `NOTIFIER_BIND_HOST`. | The prefix is prepended to the global `socraticode_metadata` collection too, so one VM setting it splits the cohort namespace silently. Branch-awareness appends the branch to the project id: a fresh six-collection set per branch. Both are the same failure class — a widening or a fragmenting that every health check still calls green. |
 | **D15** (2026-09-29, amends D8) | **`co-index` may hold a checkout of `CannObserv/index` alone, a token scoped to that one repo, and an agent session for it.** Still no *client* checkout, no client-repo credential and no Node toolchain. An editor's private runtime (VS Code Remote-SSH's Node under `~/.vscode-server`) is not one. The index repo itself is not indexed. | D8 exists to prevent central indexing (shape (b)): client checkouts, credentials for all four repos, and a Node toolchain for SocratiCode. A checkout of this host's own ops repo reintroduces none of them. The host needs a session of its own anyway: its OS patch run applies packages locally. Before this, the only way to operate it was D13's admin edge from notifier, which was built for provisioning and never meant to be the steady state. D11 is unchanged, because nothing here indexes. The Node that D8 bars is SocratiCode's, the toolchain that makes a host able to index. VS Code's server runs nothing of the kind, but it is not free: on 2026-09-29, with a session attached, its processes held ~1.2 GB PSS, and ~6.2 GB of 7.9 GB was available, against ~7.0 GB measured earlier without it (CannObserv/index#1). (CannObserv/notifier#90.) |
-| **D16** (2026-09-29, amends D10 and Out of scope) | **The deploy surface lives in `CannObserv/index`, and the check-in reports to co-status, not notifier.** | notifier is publication only (CannObserv/notifier#83), and co-status took over the dead-man's timers there. The out-of-scope line below, *"notifier owns it because notifier is the only cohort repo carrying SocratiCode config"*, stopped being the deciding fact: every cohort repo depends on the store. Moved with history (CannObserv/notifier#90, CannObserv/index#1). |
+| **D16** (2026-09-29, amends D10 and Out of scope) | **The deploy surface lives in `CannObserv/index`, and the check-in reports to co-status, not notifier.** | notifier is publication only (CannObserv/notifier#83), and co-status took over the dead-man's timers there. The out-of-scope line below, *"notifier owns it because notifier is the only cohort repo carrying SocratiCode config"*, stopped being the deciding fact: every cohort repo depends on the store. Moved with history (CannObserv/notifier#90, CannObserv/index#1). **ACL, 2026-10-01 (CannObserv/index#7):** the live policy gained `tag:index → tag:status:9000` at the cutover, but this record's ACL block and the runbook kept `tag:notifier:9000`. The notifier edge stayed live, unused, until 2026-10-01. |
+| **D17** (2026-10-01, amends D9 and the ACL) | **The store's clients are every cohort VM:** `tag:notifier`, `tag:watcher`, `tag:archiver`, `tag:replicator`, `tag:broker`, `tag:status`, `tag:observo-primary`, `tag:power-map`, on `:6333,11434` only. A new cohort VM is added here and to both ACL blocks. | Recorded after the fact: on 2026-09-30 the live policy already admitted all eight, while this record named the first four (CannObserv/index#7). D16's reason is the reason here: every cohort repo's `codebase_search` depends on the store. D9 holds, with "four VMs" read as every cohort VM. D4's accepted Ollama exposure (`/api/pull`) widens with the client list, on the same terms. |
 
 ## Design
 
@@ -133,22 +134,33 @@ thing it buys.
 
 ### ACL
 
+Steady state, as amended by D16 and D17.
+
 ```jsonc
 {
   "tagOwners": { "tag:index": ["autogroup:admin"] },
   "acls": [
-    // The four service VMs are clients of the store. Two ports, nothing else.
+    // D17: every cohort VM is a client of the store. Two ports, nothing else.
     { "action": "accept",
-      "src": ["tag:notifier", "tag:watcher", "tag:archiver", "tag:replicator"],
+      "src": ["tag:notifier", "tag:watcher", "tag:archiver", "tag:replicator",
+              "tag:broker", "tag:status", "tag:observo-primary", "tag:power-map"],
       "dst": ["tag:index:6333,11434"] },
-    // D10: co-index checks in to notifier's dead-man's timer. Port 9000 only,
-    // production key — same shape as tag:broker's rule, and the same reason.
-    { "action": "accept", "src": ["tag:index"], "dst": ["tag:notifier:9000"] },
-    // D13: BUILD PHASE ONLY. Removed at the end of Phase 3, with the ssh block.
+    // D10, D16: co-index checks in to co-status's dead-man's timer. Port 9000 only.
+    { "action": "accept", "src": ["tag:index"], "dst": ["tag:status:9000"] }
+  ]
+}
+```
+
+D13's build-phase scaffolding, added with the steady state and removed at the
+end of Phase 3:
+
+```jsonc
+{
+  // D13: BUILD PHASE ONLY. Without the acls rule the ssh block is never consulted.
+  "acls": [
     { "action": "accept", "src": ["tag:notifier"], "dst": ["tag:index:22"] }
   ],
   "ssh": [
-    // D13: build phase only. Without the acls rule above this is never consulted.
     { "action": "accept", "src": ["tag:notifier", "autogroup:member"],
       "dst": ["tag:index"], "users": ["exedev", "root"] }
   ]
@@ -156,10 +168,10 @@ thing it buys.
 ```
 
 **In the steady state** `tag:index` opens no port 22: administer over the public
-`ssh co-index.exe.xyz`, as this host does. The `:22` edge and the `ssh` block
-above are D13's build-phase scaffolding and come out at the end of Phase 3. A peer is visible only through an `acls` rule — an `ssh`
-block alone leaves the node absent from the netmap, where a missing rule looks
-like a DNS failure rather than a permission denial (archiver#193, replicator#88).
+`ssh co-index.exe.xyz`, or from this host's own session (D15). A peer is
+visible only through an `acls` rule — an `ssh` block alone leaves the node
+absent from the netmap, where a missing rule looks like a DNS failure rather
+than a permission denial (archiver#193, replicator#88).
 
 **This inverts notifier's posture, and the doc has to say so.**
 `docs/reference/tailscale.md` currently asserts *"notifier still lists no rule
@@ -167,6 +179,10 @@ with itself as a `src`: notifier initiates nothing across the tailnet —
 verified, not assumed."* Both halves of that die here: notifier gains an
 outbound edge to `index`, and `index` gains one back to notifier. The claim is
 amended in Phase 5, not left standing.
+
+**Since D16 (removed 2026-10-01, CannObserv/index#7) the second half no longer
+holds:** `index` has no edge to notifier. notifier's edge to `index` stands, as
+one of D17's store clients.
 
 ### What is centralized, and what is not
 

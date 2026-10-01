@@ -48,7 +48,8 @@ sudo systemctl enable --now tailscaled
 # and ACL rule reads naturally. `index` is what MagicDNS serves.
 #
 # --ssh is D13 build-phase scaffolding and comes out at the end of Phase 3, with
-# the tag:notifier -> tag:index:22 rule.
+# the tag:notifier -> tag:index:22 rule: `sudo tailscale set --ssh=false` on the
+# node. Removing the rule alone leaves it on, as a health warning (#7).
 #
 # The key is single-tag and pre-approved. Tags bind at device REGISTRATION —
 # `tailscale up --reset` does not retag, and changing one later costs a logout
