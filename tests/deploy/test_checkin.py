@@ -71,10 +71,12 @@ def _run(host: Path) -> subprocess.CompletedProcess[str]:
     }
     copy = host / "index-checkin.sh"
     copy.write_text(HOST_PATHS.sub(lambda m: local[m.group()], SCRIPT.read_text()))
+    # An exported STATUS_* in the runner's shell would stand in for status.env.
+    inherited = {k: v for k, v in os.environ.items() if not k.startswith("STATUS_")}
     return subprocess.run(
         ["bash", str(copy)],
         env={
-            **os.environ,
+            **inherited,
             "PATH": f"{host / 'bin'}:{os.environ['PATH']}",
             "CURL_LOG": str(host / "curl.log"),
         },
