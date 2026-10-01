@@ -8,12 +8,12 @@ this reads the host from the script rather than pinning ``status`` again. It
 relies on the cohort's convention that a node's tag is its host name
 (``status`` is ``tag:status``); this asserts the docs, not that convention.
 
-**The store's clients are listed once, in D17, and both blocks agree with it.**
+**D17 is the store's client list of record, and both blocks agree with it.**
 The live policy opened ``:6333,11434`` to every cohort VM while the docs named
 four.
 
 **Build-phase scaffolding is a block of its own.** D13's ``:22`` edge and
-``ssh`` block were removed at the end of Phase 3; in the same block as the
+``ssh`` block are removed at the end of Phase 3; in the same block as the
 steady state, a re-provision recreates them as if current.
 
 These read documents, not the tailnet: the live policy is not readable from
