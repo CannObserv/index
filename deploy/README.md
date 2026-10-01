@@ -48,7 +48,8 @@ Steady state. The store's clients are every cohort VM (D17); `tag:index` is a
 
 Build phase only (D13). Added with the steady state, **removed at the end of
 Phase 3**, together with `--ssh` on the node (`sudo tailscale set --ssh=false`).
-Removed 2026-10-01; a rebuild adds it again.
+Edge and `ssh` block removed 2026-09-29, `--ssh` 2026-10-01; a rebuild adds all
+three again.
 
 ```jsonc
 {
