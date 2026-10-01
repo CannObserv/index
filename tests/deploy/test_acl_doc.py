@@ -2,8 +2,8 @@
 
 **The check-in rule names the host the check-in posts to.** D16 moved the
 check-in from notifier to co-status, and ``index-checkin.sh`` followed, but
-both ACL blocks kept ``tag:index -> tag:notifier:9000`` for a month while the
-live policy carried both edges. Only the rule's ``dst`` tracks the script, so
+both ACL blocks kept ``tag:index -> tag:notifier:9000`` from the cutover
+(notifier#83, 2026-09-28) until #7, while the live policy carried both edges. Only the rule's ``dst`` tracks the script, so
 this reads the host from the script rather than pinning ``status`` again. It
 relies on the cohort's convention that a node's tag is its host name
 (``status`` is ``tag:status``); this asserts the docs, not that convention.
