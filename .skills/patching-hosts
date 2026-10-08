@@ -8,7 +8,6 @@ posture scheduled
 window Tue 05:15-11:45
 window Wed 05:15-11:45
 window Thu 05:15-11:45
-window Thu 14:00-21:00             # one-off: #9's first run, 2026-10-08, owner-approved; remove after
 
 # qdrant-cert-renew.timer: Mon 04:00 plus up to 1h RandomizedDelaySec; it
 # restarts Qdrant when the certificate changed.
