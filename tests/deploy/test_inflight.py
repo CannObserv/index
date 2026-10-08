@@ -12,11 +12,20 @@ request. The script counts the **writes** in the last five minutes.
   unknown: the script exits non-zero and prints no count, and the gate refuses.
 - **A proxy.** A run pauses between embedding batches, so five quiet minutes
   are evidence, not proof.
+- **A silent log is not an idle one.** Qdrant doesn't log ``/readyz``, and
+  above INFO it logs no request at all, so an empty window could mean either.
+  The script first makes one unauthenticated request, which Qdrant logs as a
+  401, carrying a unique ``User-Agent``. Until that marker is in the log, the
+  count means nothing, and the script fails closed.
 
-``docker`` is stubbed on ``PATH``; nothing reaches a real daemon.
+``docker`` and ``curl`` are stubbed on ``PATH``; nothing reaches a real daemon
+or Qdrant. The ``curl`` stub plays Qdrant's logger: it appends the request's
+log line to what ``docker logs`` prints, unless ``QDRANT_LOGS=0``.
 """
 
 import os
+import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -33,20 +42,37 @@ def _line(method: str, path: str, status: int = 200, http: str = "1.1") -> str:
     )
 
 
+def _stub(path: Path, body: str) -> None:
+    path.write_text("#!/usr/bin/env bash\n" + body)
+    path.chmod(0o755)
+
+
 @pytest.fixture
 def docker(tmp_path: Path) -> Path:
-    """A ``docker`` stub that logs its argv, prints ``$LOG`` and exits ``$RC``."""
+    """``docker`` logs its argv, prints ``$LOG`` and exits ``$RC``. ``curl``
+    logs its argv and, as Qdrant would, appends the request's line to
+    ``$LOG`` with its ``-A`` user agent, then exits ``$CURL_RC``."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    stub = bin_dir / "docker"
-    stub.write_text(
-        '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$ARGV_LOG"\ncat "$LOG"\nexit "${RC:-0}"\n'
+    _stub(bin_dir / "docker", 'printf "%s\\n" "$*" >> "$ARGV_LOG"\ncat "$LOG"\nexit "${RC:-0}"\n')
+    _stub(
+        bin_dir / "curl",
+        'printf "%s\\n" "$*" >> "$CURL_LOG"\n'
+        "ua= prev=\n"
+        'for a in "$@"; do [[ $prev == -A ]] && ua=$a; prev=$a; done\n'
+        "if [[ $QDRANT_LOGS == 1 && ${CURL_RC:-0} == 0 ]]; then\n"
+        '  printf \'%s "GET /collections HTTP/2.0" 401 56 "-" "%s" 0.000036\\n\' \\\n'
+        '    "2026-10-08T18:10:47.400985Z  INFO actix_web::middleware::logger: 100.64.0.1" \\\n'
+        '    "$ua" >> "$LOG"\n'
+        "fi\n"
+        'exit "${CURL_RC:-0}"\n',
     )
-    stub.chmod(0o755)
     return tmp_path
 
 
-def _run(docker: Path, lines: list[str], rc: int = 0) -> subprocess.CompletedProcess[str]:
+def _run(
+    docker: Path, lines: list[str], rc: int = 0, logs: bool = True, curl_rc: int = 0
+) -> subprocess.CompletedProcess[str]:
     log = docker / "qdrant.log"
     log.write_text("".join(f"{ln}\n" for ln in lines))
     env = {
@@ -54,7 +80,10 @@ def _run(docker: Path, lines: list[str], rc: int = 0) -> subprocess.CompletedPro
         "PATH": f"{docker / 'bin'}:{os.environ['PATH']}",
         "LOG": str(log),
         "ARGV_LOG": str(docker / "argv"),
+        "CURL_LOG": str(docker / "curl"),
         "RC": str(rc),
+        "QDRANT_LOGS": "1" if logs else "0",
+        "CURL_RC": str(curl_rc),
     }
     return subprocess.run(["bash", str(SCRIPT)], capture_output=True, text=True, env=env)
 
@@ -161,10 +190,45 @@ def test_fails_closed_when_grep_fails(docker: Path) -> None:
     """grep exits 1 for no match, which is a count of 0, and 2 for an error.
     An error must not leave the script exiting 0 with nothing printed: the
     gate would refuse, but say the work hadn't drained."""
-    grep = docker / "bin" / "grep"
-    grep.write_text("#!/usr/bin/env bash\necho 'grep: boom' >&2\nexit 2\n")
-    grep.chmod(0o755)
+    # Fails the count alone, so the marker check before it still passes.
+    _stub(
+        docker / "bin" / "grep",
+        "[[ $1 == -cE ]] && { echo 'grep: boom' >&2; exit 2; }\n"
+        f'exec {shutil.which("grep")} "$@"\n',
+    )
     done = _run(docker, [_line("PUT", "/collections/c/points")])
+    assert done.returncode != 0
+    assert done.stdout == ""
+    assert "grep failed" in done.stderr
+
+
+def test_its_own_marker_request_is_unauthenticated_and_to_the_clients_url(docker: Path) -> None:
+    """No key: the knob's commands run as the invoking user, who can't read
+    it, and a 401 is logged like any request. The name, not the address:
+    Qdrant's certificate covers only the MagicDNS name (D14)."""
+    _run(docker, [])
+    (call,) = (docker / "curl").read_text().splitlines()
+    assert "https://index.taild0fb76.ts.net:6333/collections" in call.split()
+    assert "api-key" not in call.lower()
+    assert re.search(r"-A index-inflight/\S+", call)
+
+
+def test_its_own_marker_request_is_not_counted(docker: Path) -> None:
+    done = _run(docker, [_line("PUT", "/collections/c/points")])
+    assert (done.returncode, done.stdout) == (0, "1\n")
+
+
+def test_fails_closed_when_qdrant_logs_no_requests(docker: Path) -> None:
+    """Qdrant above INFO: no write is logged, and neither is the marker. An
+    empty window then means nothing, and the gate must not read it as 0."""
+    done = _run(docker, [], logs=False)
+    assert done.returncode != 0
+    assert done.stdout == ""
+    assert "access log" in done.stderr
+
+
+def test_fails_closed_when_qdrant_is_unreachable(docker: Path) -> None:
+    done = _run(docker, [], curl_rc=7)
     assert done.returncode != 0
     assert done.stdout == ""
     assert "unknown" in done.stderr
