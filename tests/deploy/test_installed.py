@@ -38,6 +38,7 @@ INSTALL: dict[str, tuple[Path, int] | None] = {
     "index-inflight.sh": (BIN / "index-inflight.sh", 0o755),
     "ollama-run.sh": (BIN / "ollama-run.sh", 0o755),
     "qdrant-cert-renew.sh": (BIN / "qdrant-cert-renew.sh", 0o755),
+    "qdrant-recovery.sh": (BIN / "qdrant-recovery.sh", 0o755),
     "qdrant-run.sh": (BIN / "qdrant-run.sh", 0o755),
     "tailnet-bind.sh": (BIN / "tailnet-bind.sh", 0o755),
     "index-checkin.service": (UNITS / "index-checkin.service", 0o644),

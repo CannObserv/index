@@ -30,8 +30,8 @@ origin pkgs.tailscale.com follow
 hold tailscale tailscale
 
 # No datastore line: the grammar has none for Qdrant (to be filed upstream,
-# #9 step 4). The run snapshots it by hand, off the node, before any step that
-# stops it.
+# #9 step 4). Before any step that stops Qdrant, `sudo qdrant-recovery.sh
+# snapshot`, copied off the node; after it, `qdrant-recovery.sh check`.
 # exe-setup.service re-runs the platform's setup script every boot; its
 # Tailscale auth key is revoked (owner, 2026-10-08), so a re-run joins nothing.
 exception setup-script:redelivered 2027-01-08 the script's Tailscale auth key is revoked
