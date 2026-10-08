@@ -155,3 +155,16 @@ def test_fails_closed_without_docker(tmp_path: Path) -> None:
     done = subprocess.run(["/usr/bin/bash", str(SCRIPT)], capture_output=True, text=True, env=env)
     assert done.returncode != 0
     assert done.stdout == ""
+
+
+def test_fails_closed_when_grep_fails(docker: Path) -> None:
+    """grep exits 1 for no match, which is a count of 0, and 2 for an error.
+    An error must not leave the script exiting 0 with nothing printed: the
+    gate would refuse, but say the work hadn't drained."""
+    grep = docker / "bin" / "grep"
+    grep.write_text("#!/usr/bin/env bash\necho 'grep: boom' >&2\nexit 2\n")
+    grep.chmod(0o755)
+    done = _run(docker, [_line("PUT", "/collections/c/points")])
+    assert done.returncode != 0
+    assert done.stdout == ""
+    assert "unknown" in done.stderr

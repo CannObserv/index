@@ -18,4 +18,9 @@ fi
 
 # The request line, as actix logs it: "METHOD /path?query HTTP/1.1".
 write='"((PUT|PATCH|DELETE) /collections/|POST /collections/[^/ ?"]+/points/(delete|payload|payload/delete|payload/clear|vectors/delete|batch)[ ?])'
-grep -cE "$write" <<<"$log" || true
+# grep exits 1 on no match, which is a count of 0; 2 is an error, and unknown.
+count=$(grep -cE "$write" <<<"$log") || [ $? -eq 1 ] || {
+  echo "index-inflight: grep failed on qdrant's log, so in-flight work is unknown" >&2
+  exit 1
+}
+echo "$count"
