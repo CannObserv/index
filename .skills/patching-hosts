@@ -29,8 +29,9 @@ inflight /usr/local/bin/index-inflight.sh
 origin pkgs.tailscale.com follow
 hold tailscale tailscale
 
-# No datastore line: the grammar has none for Qdrant (filed upstream). The run
-# snapshots it by hand, off the node, before any step that stops it.
+# No datastore line: the grammar has none for Qdrant (to be filed upstream,
+# #9 step 4). The run snapshots it by hand, off the node, before any step that
+# stops it.
 # exe-setup.service re-runs the platform's setup script every boot; its
 # Tailscale auth key is revoked (owner, 2026-10-08), so a re-run joins nothing.
 exception setup-script:redelivered 2027-01-08 the script's Tailscale auth key is revoked
