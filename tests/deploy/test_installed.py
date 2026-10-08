@@ -35,6 +35,7 @@ INSTALL: dict[str, tuple[Path, int] | None] = {
     "setup.sh.template": None,  # rendered once and sent to exe.dev at provisioning
     "ollama-slim/Dockerfile": None,  # built into socraticode/ollama-slim:latest
     "index-checkin.sh": (BIN / "index-checkin.sh", 0o755),
+    "index-inflight.sh": (BIN / "index-inflight.sh", 0o755),
     "ollama-run.sh": (BIN / "ollama-run.sh", 0o755),
     "qdrant-cert-renew.sh": (BIN / "qdrant-cert-renew.sh", 0o755),
     "qdrant-run.sh": (BIN / "qdrant-run.sh", 0o755),
@@ -46,6 +47,7 @@ INSTALL: dict[str, tuple[Path, int] | None] = {
     "qdrant-cert-renew.timer": (UNITS / "qdrant-cert-renew.timer", 0o644),
     "qdrant.service": (UNITS / "qdrant.service", 0o644),
     "needrestart.conf.d/index.conf": (Path("/etc/needrestart/conf.d/index.conf"), 0o644),
+    "apt-preferences.d/tailscale": (Path("/etc/apt/preferences.d/tailscale"), 0o644),
 }
 INSTALLED = {src: dest for src, dest in INSTALL.items() if dest is not None}
 LOADED_UNITS = [src for src in INSTALLED if src.endswith((".service", ".timer"))]

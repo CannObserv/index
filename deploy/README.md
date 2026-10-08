@@ -156,6 +156,8 @@ again in ten minutes, a missed renewal window closes for good.
 | `qdrant-cert-renew.{sh,service,timer}` | weekly TLS renewal (D14, above). |
 | `index-checkin.{sh,service,timer}` | every 10 min, reports to co-status's dead-man's timer (D10). Its credentials are `STATUS_API_KEY` and `STATUS_MONITOR_ID` in `/etc/socraticode/status.env` (`0600 root:root`, never in git); without either it exits 1 before probing anything (#8). |
 | `needrestart.conf.d/index.conf` | needrestart lists restarts and never performs them (#2), so an apt run cannot bounce Docker, and Qdrant and Ollama with it. Install it before any apt run (Installing a change, below). `sudo needrestart -m u -r l -b` then prints `Disabling Ubuntu mode` and restarts nothing. |
+| `index-inflight.sh` | the patching knob's `inflight` (#9): prints how many writes Qdrant served in the last 5 min, so a step waits out a client's index run. Exits 1, printing no count, when `docker logs` fails. |
+| `apt-preferences.d/tailscale` | scopes `pkgs.tailscale.com`, which the knob follows: the site at 100, below Ubuntu, and `tailscale` and its keyring at 600 (#9). |
 
 **On `co-index` the image keeps its own tag, `socraticode/ollama-slim:latest`.**
 replicator#88 records that the `ollama/ollama:latest` tag is load-bearing,
@@ -189,6 +191,7 @@ from the checkout's root:
 sudo install -m 755 deploy/*.sh /usr/local/bin/
 sudo install -m 644 deploy/*.service deploy/*.timer /etc/systemd/system/
 sudo install -D -m 644 deploy/needrestart.conf.d/index.conf /etc/needrestart/conf.d/index.conf
+sudo install -D -m 644 deploy/apt-preferences.d/tailscale /etc/apt/preferences.d/tailscale
 sudo systemctl daemon-reload
 uv run pytest tests/deploy/test_installed.py
 ```

@@ -1,0 +1,14 @@
+# #9: the patching knob follows pkgs.tailscale.com in the maintenance lane, so
+# the site is scoped here (patching-hosts policy.md, "Two lanes"). At apt's
+# default 500 it ties Ubuntu, and a package it served under an Ubuntu name, at
+# a higher version, would replace Ubuntu's. So everything from the site sits
+# below Ubuntu, except the two packages it was added for.
+#
+# Pinned by site, not by `o=Tailscale`: the site is what the knob names.
+Package: *
+Pin: origin pkgs.tailscale.com
+Pin-Priority: 100
+
+Package: tailscale tailscale-archive-keyring
+Pin: origin pkgs.tailscale.com
+Pin-Priority: 600
