@@ -1,0 +1,39 @@
+# co-index's patching knob (#9). Grammar: skills/patching-hosts/references/knob.md.
+# Times are UTC.
+
+class dev                          # D9: off every production path
+posture scheduled
+
+# Clients are near-silent 05:00-12:00 UTC (Qdrant's access log, 2026-10-01..08).
+window Tue 05:15-11:45
+window Wed 05:15-11:45
+window Thu 05:15-11:45
+window Thu 14:00-21:00             # one-off: #9's first run, 2026-10-08, owner-approved; remove after
+
+# qdrant-cert-renew.timer: Mon 04:00 plus up to 1h RandomizedDelaySec; it
+# restarts Qdrant when the certificate changed.
+quiet 04:00-05:05 Mon
+
+service qdrant.service
+service ollama.service
+restarter qdrant-cert-renew.timer
+
+# Unauthenticated endpoints, on the name and port clients use (D3, D14).
+health curl -sf --max-time 5 https://index.taild0fb76.ts.net:6333/readyz
+health curl -sf --max-time 5 http://index.taild0fb76.ts.net:11434/api/tags
+
+# Qdrant writes in the last 5 min; a client's index run shows nowhere else (D11).
+inflight /usr/local/bin/index-inflight.sh
+
+# Scoped by deploy/apt-preferences.d/tailscale. tailscaled's restart is its own
+# step: Qdrant and Ollama bind the tailnet address (D3).
+origin pkgs.tailscale.com follow
+hold tailscale tailscale
+
+# No datastore line: the grammar has none for Qdrant (filed upstream). The run
+# snapshots it by hand, off the node, before any step that stops it.
+# exe-setup.service re-runs the platform's setup script every boot; its
+# Tailscale auth key is revoked (owner, 2026-10-08), so a re-run joins nothing.
+exception setup-script:redelivered 2027-01-08 the script's Tailscale auth key is revoked
+
+# No caller lines: an outage degrades codebase_search to grep (D9).
