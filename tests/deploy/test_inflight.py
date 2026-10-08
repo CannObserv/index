@@ -26,10 +26,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "deploy" / "index-inflight.sh"
 
 
-def _line(method: str, path: str, status: int = 200) -> str:
+def _line(method: str, path: str, status: int = 200, http: str = "1.1") -> str:
     return (
         "2026-10-08T16:07:04.357383Z  INFO actix_web::middleware::logger: 172.17.0.1 "
-        f'"{method} {path} HTTP/1.1" {status} 74 "-" "qdrant-js/1.18.0" 0.004820'
+        f'"{method} {path} HTTP/{http}" {status} 74 "-" "qdrant-js/1.18.0" 0.004820'
     )
 
 
@@ -113,6 +113,19 @@ READS = [
 def test_a_read_is_not_counted(docker: Path, method: str, path: str) -> None:
     done = _run(docker, [_line(method, path)])
     assert (done.returncode, done.stdout) == (0, "0\n")
+
+
+@pytest.mark.parametrize("http", ["1.1", "2.0"])
+def test_the_protocol_version_does_not_matter(docker: Path, http: str) -> None:
+    """qdrant-js speaks HTTP/1.1, but a request over TLS can be HTTP/2: curl's
+    on co-index is logged as ``HTTP/2.0`` (measured 2026-10-08)."""
+    lines = [
+        _line("PUT", "/collections/c/points", http=http),
+        _line("POST", "/collections/c/points/delete", http=http),
+        _line("POST", "/collections/c/points/search", http=http),
+    ]
+    done = _run(docker, lines)
+    assert (done.returncode, done.stdout) == (0, "2\n")
 
 
 def test_counts_every_write_among_other_lines(docker: Path) -> None:
