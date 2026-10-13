@@ -63,10 +63,16 @@ def host(tmp_path: Path) -> Path:
     bin_dir.mkdir()
     _stub(bin_dir / "tailnet-bind.sh", "echo 100.64.0.1\n")
     _stub(bin_dir / "openssl", "echo 'notAfter=Jan  1 00:00:00 2099 GMT'\n")
+    # The runner's own disk would otherwise decide whether `disk:root` is a finding.
+    _stub(bin_dir / "df", "echo Use%; echo ' 42%'\n")
     # One line per call in each log: its argv as `ps` shows it, and what it
     # was sent, with each `-H @file` read. Plus any credential name it was
     # handed in its environment. The check-in's body arrives on stdin, and is
     # kept, which also drains the pipe into it so it never breaks.
+    #
+    # Qdrant and Ollama answer nothing, unless STUB_HEALTHY is set: then
+    # Qdrant answers 200 with its key and 401 without, and Ollama lists the
+    # model.
     _stub(
         bin_dir / "curl",
         'printf "%s\\n" "$*" >> "$CURL_LOG"\n'
@@ -78,7 +84,14 @@ def host(tmp_path: Path) -> Path:
         "done\n"
         'printf "%s\\n" "${sent[*]}" >> "$CURL_LOG.sent"\n'
         'env | grep -o "^STATUS_[A-Z_]*" >> "$CURL_LOG.env" || true\n'
-        '[[ " $* " != *" @- "* ]] || cat > "$CURL_LOG.body"\n',
+        '[[ " $* " != *" @- "* ]] || cat > "$CURL_LOG.body"\n'
+        "[[ -n ${STUB_HEALTHY:-} ]] || exit 0\n"
+        'if [[ " $* " == *"/api/tags"* ]]; then\n'
+        '  out=; prev=; for a in "$@"; do [[ $prev != -o ]] || out=$a; prev=$a; done\n'
+        '  echo \'{"models":[{"name":"nomic-embed-text:latest"}]}\' > "$out"\n'
+        'elif [[ " $* " == *"%{http_code}"* && " $* " != *"/checkin"* ]]; then\n'
+        '  [[ " ${sent[*]} " == *"api-key: "* ]] && printf 200 || printf 401\n'
+        "fi\n",
     )
     return tmp_path
 
@@ -87,7 +100,7 @@ def _write(host: Path, name: str, content: str) -> None:
     (host / "etc" / "socraticode" / name).write_text(content)
 
 
-def _run(host: Path) -> subprocess.CompletedProcess[str]:
+def _run(host: Path, healthy: bool = False) -> subprocess.CompletedProcess[str]:
     local = {
         "/etc/socraticode/": f"{host}/etc/socraticode/",
         "/usr/local/bin/": f"{host}/bin/",
@@ -104,6 +117,7 @@ def _run(host: Path) -> subprocess.CompletedProcess[str]:
             "PATH": f"{host / 'bin'}:{os.environ['PATH']}",
             "CURL_LOG": str(host / "curl.log"),
             "LC_ALL": "C",  # bash's own errors, asserted below, are translated
+            **({"STUB_HEALTHY": "1"} if healthy else {}),
         },
         capture_output=True,
         text=True,
@@ -221,3 +235,14 @@ def test_the_fault_key_ignores_the_message(host: Path) -> None:
     assert messages[0] != messages[1], "the control: the cert's message changed"
     assert "tls:cert" in runs[0]["metadata"]["fault"]
     assert runs[0]["metadata"]["fault"] == runs[1]["metadata"]["fault"]
+
+
+def test_a_healthy_host_sends_ok_with_an_empty_fault(host: Path) -> None:
+    """The body sent every tick. An unparseable one is a 4xx that curl exits 0
+    on, heard only as a missed deadline."""
+    _write(host, "status.env", STATUS_ENV)
+    assert _run(host, healthy=True).returncode == 0
+    body = _body(host)
+    assert body["status"] == "ok", body["variables"]["findings"]
+    assert body["variables"]["finding_count"] == 0
+    assert body["metadata"] == {"fault": []}
