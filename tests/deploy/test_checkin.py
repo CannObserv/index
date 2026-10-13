@@ -24,9 +24,11 @@ The script runs from a copy whose host paths point into ``tmp_path``, with
 co-index it never touches the live timer's files.
 """
 
+import json
 import os
 import re
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -59,7 +61,7 @@ def host(tmp_path: Path) -> Path:
     # One line per call in each log: its argv as `ps` shows it, and what it
     # was sent, with each `-H @file` read. Plus any credential name it was
     # handed in its environment. The check-in's body arrives on stdin, and is
-    # drained so the pipe into it never breaks.
+    # kept, which also drains the pipe into it so it never breaks.
     _stub(
         bin_dir / "curl",
         'printf "%s\\n" "$*" >> "$CURL_LOG"\n'
@@ -71,7 +73,7 @@ def host(tmp_path: Path) -> Path:
         "done\n"
         'printf "%s\\n" "${sent[*]}" >> "$CURL_LOG.sent"\n'
         'env | grep -o "^STATUS_[A-Z_]*" >> "$CURL_LOG.env" || true\n'
-        '[[ " $* " != *" @- "* ]] || cat > /dev/null\n',
+        '[[ " $* " != *" @- "* ]] || cat > "$CURL_LOG.body"\n',
     )
     return tmp_path
 
@@ -176,3 +178,41 @@ def test_a_missing_value_fails_naming_it(host: Path, missing: str, value: str | 
     assert f"{missing} unset in" in result.stderr
     assert "status.env" in result.stderr
     assert not (host / "curl.log").exists(), "probed before the credentials were checked"
+
+
+def _body(host: Path) -> dict:
+    """The check-in's body, parsed: it is hand-built JSON, so parsing is a check."""
+    return json.loads((host / "curl.log.body").read_text())
+
+
+def _expires_in(host: Path, days: int) -> None:
+    when = datetime.now(UTC) + timedelta(days=days, hours=12)
+    _stub(host / "bin" / "openssl", f"echo 'notAfter={when:%b %d %H:%M:%S %Y} GMT'\n")
+
+
+def test_an_alert_keys_its_fault_by_check_and_subject(host: Path) -> None:
+    """co-status reports an ``alert`` whose ``metadata.fault`` differs from the
+    open fault's at once (#10, CannObserv/status#28). Without it, a new finding
+    mid-fault waits for the fault to clear."""
+    _write(host, "status.env", STATUS_ENV)
+    assert _run(host).returncode == 0
+    body = _body(host)
+    assert body["status"] == "alert", "the control: the stubbed Qdrant answers nothing"
+    findings = body["variables"]["findings"]
+    assert body["metadata"]["fault"] == [f"{f['check']}:{f['subject']}" for f in findings]
+    assert {"qdrant:collections", "qdrant:auth"} <= set(body["metadata"]["fault"])
+
+
+def test_the_fault_key_ignores_the_message(host: Path) -> None:
+    """Messages carry ages, codes and percentages. A key holding one would
+    open a new fault, and send a report, on every check-in."""
+    _write(host, "status.env", STATUS_ENV)
+    runs = []
+    for days in (5, 10):
+        _expires_in(host, days)
+        assert _run(host).returncode == 0
+        runs.append(_body(host))
+    messages = [[f["message"] for f in b["variables"]["findings"]] for b in runs]
+    assert messages[0] != messages[1], "the control: the cert's message changed"
+    assert "tls:cert" in runs[0]["metadata"]["fault"]
+    assert runs[0]["metadata"]["fault"] == runs[1]["metadata"]["fault"]

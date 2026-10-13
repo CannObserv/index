@@ -29,8 +29,16 @@ QKEY="$(cat /etc/socraticode/qdrant.key)"
 # -- https://index:6333 fails verification. Same URL every client uses.
 QURL="https://index.taild0fb76.ts.net:6333"
 
-findings=""
-add() { findings="${findings}${findings:+,}{\"check\":\"$1\",\"subject\":\"$2\",\"message\":\"$3\"}"; }
+# `fault` is co-status's `metadata.fault` (#10, CannObserv/status#28): an
+# `alert` whose key differs from the open fault's reports at once, so a new
+# finding mid-fault is heard. `check:subject` only -- the message carries ages,
+# codes and percentages, and a key holding one would report every tick. The
+# checks run in a fixed order, so the key needs no sort.
+findings="" fault=""
+add() {
+  findings="${findings}${findings:+,}{\"check\":\"$1\",\"subject\":\"$2\",\"message\":\"$3\"}"
+  fault="${fault}${fault:+,}\"$1:$2\""
+}
 
 # Qdrant answering AND still refusing an unauthenticated read. A store that
 # went open is as much a defect as one that went down, and only one of the two
@@ -74,8 +82,8 @@ free_pct=$(df --output=pcent / | tail -1 | tr -dc '0-9')
 count=$(printf '%s' "$findings" | grep -c '"check"' || true)
 if [ "$count" -eq 0 ]; then status=ok; else status=alert; fi
 
-payload=$(printf '{"status":"%s","variables":{"source":"co-index","finding_count":%s,"findings":[%s]}}' \
-  "$status" "$count" "$findings")
+payload=$(printf '{"status":"%s","variables":{"source":"co-index","finding_count":%s,"findings":[%s]},"metadata":{"fault":[%s]}}' \
+  "$status" "$count" "$findings" "$fault")
 
 # co-status took over the dead-man's timers (notifier#83, CannObserv/status#2). Same
 # path, body and monitor id as notifier's; only the host and the key changed.
