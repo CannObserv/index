@@ -33,7 +33,9 @@ QURL="https://index.taild0fb76.ts.net:6333"
 # `alert` whose key differs from the open fault's reports at once, so a new
 # finding mid-fault is heard. `check:subject` only -- the message carries ages,
 # codes and percentages, and a key holding one would report every tick. The
-# checks run in a fixed order, so the key needs no sort.
+# checks run in a fixed order, so the key needs no sort. A finding that clears
+# mid-fault changes the key too: by design that reports the rest at once, and
+# co-status sends no *cleared* for the set it replaces (its spec, F2).
 findings="" fault=""
 add() {
   findings="${findings}${findings:+,}{\"check\":\"$1\",\"subject\":\"$2\",\"message\":\"$3\"}"
