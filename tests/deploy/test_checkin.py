@@ -1,4 +1,4 @@
-"""Behaviour tests for deploy/index-checkin.sh's credentials (#8).
+"""Behaviour tests for deploy/index-checkin.sh's credentials (#8) and body (#10).
 
 The check-in has reported to co-status since notifier#83, under notifier's
 names: ``NOTIFIER_API_KEY`` and ``NOTIFIER_MONITOR_ID`` in
@@ -18,6 +18,11 @@ are co-status's credentials, so they are named for it: ``STATUS_API_KEY`` and
 - **No key is on curl's argv.** co-index's /proc has no hidepid, so an
   argument is readable by every user there while the call runs. Each key goes
   in a header file from a process substitution.
+- **The body keys its fault by ``check:subject``, as ``metadata.fault``.**
+  co-status reports a run of ``alert`` check-ins once, and an ``alert`` whose
+  key differs from the open fault's at once (CannObserv/status#28), so a new
+  finding mid-fault is heard. The message stays out of it: it carries ages,
+  codes and percentages, and would report every tick.
 
 The script runs from a copy whose host paths point into ``tmp_path``, with
 ``curl`` and ``openssl`` stubbed on ``PATH``. Nothing leaves the test, and on
