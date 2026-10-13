@@ -205,6 +205,8 @@ def _body(host: Path) -> dict:
 
 
 def _expires_in(host: Path, days: int) -> None:
+    # The script floors seconds to whole days: half a day's margin makes that
+    # `days`, however long the run takes.
     when = datetime.now(UTC) + timedelta(days=days, hours=12)
     _stub(host / "bin" / "openssl", f"echo 'notAfter={when:%b %d %H:%M:%S %Y} GMT'\n")
 
