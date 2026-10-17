@@ -17,6 +17,13 @@ service qdrant.service
 service ollama.service
 restarter qdrant-cert-renew.timer
 
+# The Ollama image is this repo's to update, never a patching run's (#11): a
+# new engine can change every vector, so it's an engine change (deploy/README.md).
+# The probe matches owner globs against binaries only, not container images,
+# so this line is the grammar's intent and the probe reads it as nothing yet
+# (upstream, #11).
+owner socraticode/ollama-slim self
+
 # Unauthenticated endpoints, on the name and port clients use (D3, D14).
 health curl -sf --max-time 5 https://index.taild0fb76.ts.net:6333/readyz
 health curl -sf --max-time 5 http://index.taild0fb76.ts.net:11434/api/tags

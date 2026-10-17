@@ -220,3 +220,65 @@ or owner, or is not loaded, and on any unit with `[Install]` that is not enabled
 and running, and prints the command that fixes it. Everywhere, CI included, it
 fails on a new file in `deploy/` until the file is mapped, and on install lines
 above that no longer install exactly what is mapped.
+
+## Engine change
+
+**An Ollama upgrade can change every stored vector, and nothing else
+notices** (#11, D19). 0.40.5 case-folds input that 0.21.2 didn't, which
+moved every chunk holding an uppercase letter (median cosine 0.97, min 0.68),
+with model, prefixes and dimensions unchanged. SocratiCode's index profile
+records none of that, and it re-embeds only files whose hash changed. So
+after a swap the store is silently mixed, and under D7 one stale collection
+mis-orders every cross-repo search. That's why the base image is pinned,
+and why the check-in's `ollama:engine` finding exists. A patching run never
+touches the image (the knob's `owner` line).
+
+**Upgrade only for a reason** (a fix, speed, a model). When there is one,
+inside a knob window:
+
+1. **Measure the candidate, read-only.** Pin the new version and digest in
+   `ollama-slim/Dockerfile`, build it under its own tag (the build line in
+   Contents, with the new version), and start it on loopback beside the live
+   one:
+
+   ```bash
+   docker run -d --rm --name ollama-candidate -p 127.0.0.1:11435:11434 \
+     -v /var/lib/ollama/models:/root/.ollama/models:ro socraticode/ollama-slim:<new> serve
+   sudo cat /etc/socraticode/qdrant.key \
+     | python3 -I scripts/reembed.py --ollama http://127.0.0.1:11435 --dry-run --sample 24
+   ```
+
+2. **No drift** (every collection `PASS`): set the tag in `ollama-run.sh`,
+   install, and restart `ollama.service`. Then recapture the fingerprint (its
+   row in Contents), commit, and install it. You're done.
+3. **Drift:** the store is re-embedded from its own payloads, with no client
+   involved:
+   - **A day ahead,** file an issue on each cohort repo with its
+     `GH_TOKEN_<REPO>`: search degrades in the window, and no indexing until
+     it closes.
+   - **The gate, before the window, on the live engine:** `reembed.py
+     --dry-run --batch 8 --gate-out <gate.json>`. Every collection must
+     `PASS`. A collection that fails gets an issue asking its owner for
+     `codebase_remove` + `codebase_index` after the swap. Never run
+     `--apply` on it.
+   - **In the window:** check `index-inflight.sh` reads 0, then run `sudo
+     qdrant-recovery.sh snapshot`. Keep the old image's tag. Set the new tag
+     in `ollama-run.sh`, install, restart `ollama.service`, then run
+     `reembed.py --apply --gate <gate.json>`.
+   - **Verify:** `reembed.py --dry-run --sample 24` passes on the new engine,
+     and `qdrant-recovery.sh check <counts>` passes. Recapture the
+     fingerprint, commit, and install it.
+   - **Rollback:** the old tag in `ollama-run.sh`, plus the snapshot.
+
+**Throughput:** on 2 vCPU with one Ollama slot, 0.34.0 re-embeds about
+0.8 s per point. A sample of 384 took 309 s, so the store's 48k points take
+about 11 hours. That's longer than one window. Either the window grows, or
+`--apply` runs per collection (`--collection`) across windows, and the
+cross-repo merge stays mixed in between. #11 measured 0.40.5 at 2.1× faster.
+
+`reembed.py` rebuilds each point's text as SocratiCode 1.14.0 did: the
+prefix, then `relativePath` (code) or `context:<name>:<path.normalize(path)>`
+(artifacts, where Node keeps a directory's trailing `/`), then the content,
+cut at `contextLength` UTF-16 code units. A newer SocratiCode that changes
+any of that fails the gate. That failure is the gate working, not a bug in
+the gate.
