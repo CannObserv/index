@@ -59,8 +59,17 @@ open=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${QURL}/collections
 curl -sf --max-time 10 "http://${ADDR}:11434/api/tags" -o /tmp/index-checkin-tags.json \
   || add ollama tags "not reachable"
 if [ -f /tmp/index-checkin-tags.json ]; then
-  grep -q 'nomic-embed-text' /tmp/index-checkin-tags.json \
-    || add ollama model "nomic-embed-text absent"
+  if grep -q 'nomic-embed-text' /tmp/index-checkin-tags.json; then
+    # The same model can embed differently under a new engine, and no client
+    # can tell (#11). Exit 1 is drift, its line the message. Exit 2 is
+    # unknown, no finding: a timeout behind a client's batch is not drift.
+    rc=0
+    drift=$(/usr/local/bin/engine-fingerprint.py check "http://${ADDR}:11434" \
+      /etc/socraticode/engine-fingerprint.json) || rc=$?
+    [ "$rc" -ne 1 ] || add ollama engine "${drift:-fingerprint check failed}"
+  else
+    add ollama model "nomic-embed-text absent"
+  fi
   rm -f /tmp/index-checkin-tags.json
 fi
 

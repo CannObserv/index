@@ -34,6 +34,8 @@ INSTALL: dict[str, tuple[Path, int] | None] = {
     "README.md": None,  # the runbook
     "setup.sh.template": None,  # rendered once and sent to exe.dev at provisioning
     "ollama-slim/Dockerfile": None,  # built into socraticode/ollama-slim:<its version>
+    "engine-fingerprint.py": (BIN / "engine-fingerprint.py", 0o755),
+    "engine-fingerprint.json": (Path("/etc/socraticode/engine-fingerprint.json"), 0o644),
     "index-checkin.sh": (BIN / "index-checkin.sh", 0o755),
     "index-inflight.sh": (BIN / "index-inflight.sh", 0o755),
     "ollama-run.sh": (BIN / "ollama-run.sh", 0o755),

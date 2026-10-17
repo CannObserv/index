@@ -18,6 +18,11 @@ are co-status's credentials, so they are named for it: ``STATUS_API_KEY`` and
 - **No key is on curl's argv.** co-index's /proc has no hidepid, so an
   argument is readable by every user there while the call runs. Each key goes
   in a header file from a process substitution.
+- **The engine's fingerprint is a finding only on drift (#11).**
+  ``engine-fingerprint.py`` exits 1 on drift, which is ``ollama:engine`` with
+  its line as the message, and 2 when it couldn't embed: no finding, since a
+  timeout behind a client's batch is not a changed engine. It runs only once
+  Ollama has answered with the model, so a down Ollama is one finding, not two.
 - **The body keys its fault by ``check:subject``, as ``metadata.fault``.**
   co-status reports a run of ``alert`` check-ins once, and an ``alert`` whose
   key differs from the open fault's at once (CannObserv/status#28), so a new
@@ -65,6 +70,13 @@ def host(tmp_path: Path) -> Path:
     _stub(bin_dir / "openssl", "echo 'notAfter=Jan  1 00:00:00 2099 GMT'\n")
     # The runner's own disk would otherwise decide whether `disk:root` is a finding.
     _stub(bin_dir / "df", "echo Use%; echo ' 42%'\n")
+    # Logs its argv, prints STUB_FP_OUT, exits STUB_FP_EXIT (0: no drift).
+    _stub(
+        bin_dir / "engine-fingerprint.py",
+        'printf "%s\\n" "$*" >> "$CURL_LOG.fp"\n'
+        '[[ -z ${STUB_FP_OUT:-} ]] || printf "%s\\n" "$STUB_FP_OUT"\n'
+        'exit "${STUB_FP_EXIT:-0}"\n',
+    )
     # One line per call in each log: its argv as `ps` shows it, and what it
     # was sent, with each `-H @file` read. Plus any credential name it was
     # handed in its environment. The check-in's body arrives on stdin, and is
@@ -100,7 +112,7 @@ def _write(host: Path, name: str, content: str) -> None:
     (host / "etc" / "socraticode" / name).write_text(content)
 
 
-def _run(host: Path, healthy: bool = False) -> subprocess.CompletedProcess[str]:
+def _run(host: Path, healthy: bool = False, **env: str) -> subprocess.CompletedProcess[str]:
     local = {
         "/etc/socraticode/": f"{host}/etc/socraticode/",
         "/usr/local/bin/": f"{host}/bin/",
@@ -118,6 +130,7 @@ def _run(host: Path, healthy: bool = False) -> subprocess.CompletedProcess[str]:
             "CURL_LOG": str(host / "curl.log"),
             "LC_ALL": "C",  # bash's own errors, asserted below, are translated
             **({"STUB_HEALTHY": "1"} if healthy else {}),
+            **env,
         },
         capture_output=True,
         text=True,
@@ -248,3 +261,43 @@ def test_a_healthy_host_sends_ok_with_an_empty_fault(host: Path) -> None:
     assert body["status"] == "ok", body["variables"]["findings"]
     assert body["variables"]["finding_count"] == 0
     assert body["metadata"] == {"fault": []}
+
+
+def _fingerprint_calls(host: Path) -> list[str]:
+    log = host / "curl.log.fp"
+    return log.read_text().splitlines() if log.exists() else []
+
+
+def test_the_fingerprint_is_checked_against_the_engine_clients_use(host: Path) -> None:
+    _write(host, "status.env", STATUS_ENV)
+    assert _run(host, healthy=True).returncode == 0
+    assert _fingerprint_calls(host) == [
+        f"check http://100.64.0.1:11434 {host}/etc/socraticode/engine-fingerprint.json"
+    ]
+
+
+def test_drift_is_the_ollama_engine_finding(host: Path) -> None:
+    _write(host, "status.env", STATUS_ENV)
+    line = "engine 0.40.5 drifted from the 0.34.0 fingerprint (cosine < 0.99999): code 0.9100"
+    assert _run(host, healthy=True, STUB_FP_EXIT="1", STUB_FP_OUT=line).returncode == 0
+    body = _body(host)
+    assert body["status"] == "alert"
+    assert body["metadata"]["fault"] == ["ollama:engine"]
+    assert body["variables"]["findings"] == [
+        {"check": "ollama", "subject": "engine", "message": line}
+    ]
+
+
+def test_an_unknown_fingerprint_is_no_finding(host: Path) -> None:
+    """Exit 2: the probes queued behind a client's batch and timed out."""
+    _write(host, "status.env", STATUS_ENV)
+    result = _run(host, healthy=True, STUB_FP_EXIT="2")
+    assert result.returncode == 0, result.stderr
+    assert _body(host)["status"] == "ok"
+
+
+def test_a_down_ollama_is_one_finding_not_two(host: Path) -> None:
+    _write(host, "status.env", STATUS_ENV)
+    assert _run(host).returncode == 0
+    assert _fingerprint_calls(host) == []
+    assert "ollama:engine" not in _body(host)["metadata"]["fault"]
