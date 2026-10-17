@@ -149,7 +149,7 @@ again in ten minutes, a missed renewal window closes for good.
 | | |
 |---|---|
 | `setup.sh.template` | first-boot script; `__TAILSCALE_KEY__` substituted at provision time. Joins the tailnet and nothing else. |
-| `ollama-slim/Dockerfile` | CPU-only Ollama, 221 MB against 9.19 GB, embeddings bitwise identical to the stock image (CannObserv/replicator#88). |
+| `ollama-slim/Dockerfile` | CPU-only Ollama, 221 MB against 9.19 GB, embeddings bitwise identical to the stock image (CannObserv/replicator#88). Its base is pinned to a version and a digest (#11): changing it is an [engine change](#engine-change). |
 | `qdrant.service`, `ollama.service` | the long-running units. A clean `systemctl stop qdrant` records success (`SuccessExitStatus=143`) and an out-of-band SIGTERM (`docker stop qdrant`) still restarts it (`Restart=always`, #4). Ollama exits 0 on SIGTERM and has `Restart=always` for the same case (#5). Stop either with `systemctl stop`, which never restarts. The start limit sits in `[Unit]`, the only place systemd reads it. |
 | `qdrant-run.sh`, `ollama-run.sh` | their `ExecStart=`: `docker run` with the publish bound to the tailnet address only (D3). |
 | `tailnet-bind.sh` | prints this node's tailnet address, waiting up to 60 s for `tailscaled` to assign one. Called by both run scripts and the check-in. |
@@ -160,7 +160,7 @@ again in ten minutes, a missed renewal window closes for good.
 | `qdrant-recovery.sh` | Qdrant's recovery point for a patching run (#9), which `patching-hosts` can't take: the knob has no line for Qdrant. `sudo qdrant-recovery.sh snapshot` writes the point counts and a full snapshot, copied **out of the container** (`--rm` discards its snapshots directory), mode 600, with the sha256 for the owner's off-node copy. `sudo qdrant-recovery.sh check <counts file>` after a step that stopped Qdrant: fails on a collection gone or emptied, or a real query with no hits. |
 | `apt-preferences.d/tailscale` | scopes `pkgs.tailscale.com`, which the knob follows: the site at 100, below Ubuntu, and `tailscale` and its keyring at 600 (#9). |
 
-**On `co-index` the image keeps its own tag, `socraticode/ollama-slim:latest`.**
+**On `co-index` the image keeps its own tag, `socraticode/ollama-slim:<version>`**, the version the Dockerfile pins (#11).
 replicator#88 records that the `ollama/ollama:latest` tag is load-bearing,
 because `ensureOllamaContainerReady` guards on presence alone —
 
@@ -174,7 +174,11 @@ true on a host where **SocratiCode** manages the container. It does not apply
 here: systemd owns this container and `ollama-run.sh` names the image
 explicitly, and every cohort client runs `OLLAMA_MODE=external` and manages no
 container at all. Keeping our own tag stops a locally-built image from
-impersonating upstream's.
+impersonating upstream's. Built, from the checkout's root:
+
+```bash
+docker build -t socraticode/ollama-slim:0.34.0 deploy/ollama-slim
+```
 
 **Measured on this host, 2026-09-11**, reproducing replicator#88 independently:
 9.18 GB → **221 MB**, and against the same volume, model and prompt the two

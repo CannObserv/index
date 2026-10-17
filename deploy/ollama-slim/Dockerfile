@@ -8,7 +8,13 @@
 # Deleting the directories in a derived layer does nothing: Docker layers are
 # additive and the parent layers still ship. The prune has to happen in a
 # throwaway stage, and the payload is copied into a clean base.
-FROM ollama/ollama:latest AS pruned
+#
+# Pinned, never :latest (#11). A release can change nomic-embed-text's vectors
+# with the model unchanged (0.40.5 case-folds input), and nothing a client
+# runs notices: a rebuild onto one mixes every collection. Changing this line
+# is an engine change, which re-embeds the store: deploy/README.md, "Engine
+# change". The tag in ollama-run.sh names the same version.
+FROM ollama/ollama:0.34.0@sha256:684d8674b4315fa18f4f0e973a118ec2652ed96f67563277839985175858e0ba AS pruned
 RUN rm -rf /usr/lib/ollama/mlx_cuda_v13 \
            /usr/lib/ollama/cuda_v12 \
            /usr/lib/ollama/cuda_v13 \
