@@ -21,7 +21,7 @@ restarter qdrant-cert-renew.timer
 # new engine can change every vector, so it's an engine change (deploy/README.md).
 # The probe matches owner globs against binaries only, not container images,
 # so this line is the grammar's intent and the probe reads it as nothing yet
-# (upstream, #11).
+# (gregoryfoster/skills#427).
 owner socraticode/ollama-slim self
 
 # Unauthenticated endpoints, on the name and port clients use (D3, D14).
