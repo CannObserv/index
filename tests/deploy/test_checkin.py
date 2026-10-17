@@ -45,7 +45,9 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "deploy" / "index-checkin.sh"
-HOST_PATHS = re.compile(r"/etc/socraticode/|/usr/local/bin/|/tmp/index-checkin-")
+HOST_PATHS = re.compile(
+    r"/etc/socraticode/|/usr/local/bin/|/usr/local/share/co-index/|/tmp/index-checkin-"
+)
 
 KEY = "status-key"
 MONITOR = "01MONITORID"
@@ -116,6 +118,7 @@ def _run(host: Path, healthy: bool = False, **env: str) -> subprocess.CompletedP
     local = {
         "/etc/socraticode/": f"{host}/etc/socraticode/",
         "/usr/local/bin/": f"{host}/bin/",
+        "/usr/local/share/co-index/": f"{host}/share/",
         "/tmp/index-checkin-": f"{host}/tmp/index-checkin-",
     }
     copy = host / "index-checkin.sh"
@@ -272,7 +275,7 @@ def test_the_fingerprint_is_checked_against_the_engine_clients_use(host: Path) -
     _write(host, "status.env", STATUS_ENV)
     assert _run(host, healthy=True).returncode == 0
     assert _fingerprint_calls(host) == [
-        f"check http://100.64.0.1:11434 {host}/etc/socraticode/engine-fingerprint.json"
+        f"check http://100.64.0.1:11434 {host}/share/engine-fingerprint.json"
     ]
 
 

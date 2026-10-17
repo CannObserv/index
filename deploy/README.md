@@ -195,7 +195,7 @@ from the checkout's root:
 
 ```bash
 sudo install -m 755 deploy/*.sh deploy/*.py /usr/local/bin/
-sudo install -m 644 deploy/engine-fingerprint.json /etc/socraticode/engine-fingerprint.json
+sudo install -D -m 644 deploy/engine-fingerprint.json /usr/local/share/co-index/engine-fingerprint.json
 sudo install -m 644 deploy/*.service deploy/*.timer /etc/systemd/system/
 sudo install -D -m 644 deploy/needrestart.conf.d/index.conf /etc/needrestart/conf.d/index.conf
 sudo install -D -m 644 deploy/apt-preferences.d/tailscale /etc/apt/preferences.d/tailscale

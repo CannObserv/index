@@ -65,7 +65,7 @@ if [ -f /tmp/index-checkin-tags.json ]; then
     # unknown, no finding: a timeout behind a client's batch is not drift.
     rc=0
     drift=$(/usr/local/bin/engine-fingerprint.py check "http://${ADDR}:11434" \
-      /etc/socraticode/engine-fingerprint.json) || rc=$?
+      /usr/local/share/co-index/engine-fingerprint.json) || rc=$?
     [ "$rc" -ne 1 ] || add ollama engine "${drift:-fingerprint check failed}"
   else
     add ollama model "nomic-embed-text absent"

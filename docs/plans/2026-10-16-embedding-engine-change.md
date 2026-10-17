@@ -48,7 +48,7 @@ test holds the two to the same version.
 
 **(2) Detect.** A committed fixture of probe texts (code, prose, uppercase,
 lowercase) and their 0.34.0 vectors. `index-checkin.sh` embeds the probes and
-reports the fault `engine:fingerprint` (the #10 key) when any cosine falls
+reports the fault `ollama:engine` (the #10 key) when any cosine falls
 below 0.99999. That catches an unpinned or accidental change within 10
 minutes, whatever caused it.
 
@@ -102,7 +102,15 @@ A collection whose text can't be rebuilt exactly falls back to its owner's
    - A check-in test: matching probes send `ok`, a drifted probe sends the
      fault `engine:fingerprint`.
    - Install, then see the next check-in report `ok`.
-3. **`scripts/engine-drift.py`** (stdlib, `python3 -I`). This generalises
+   *Revised in execution:* the key is `ollama:engine`, matching the other
+   `ollama:*` checks. Exit 2 (couldn't embed, e.g. a timeout behind a
+   client's batch) is no finding.
+3. *Revised in execution: steps 3 and 4 are one script, `scripts/reembed.py`.*
+   `python3 -I` takes the script's directory off `sys.path`, so two scripts
+   couldn't share the text rebuild without a package. A drift check is a
+   dry run on a sample (`--dry-run --sample N`).
+
+   Originally: **`scripts/engine-drift.py`** (stdlib, `python3 -I`). This generalises
    today's sampler: rebuild each point's text, embed it on a given Ollama URL,
    and report cosine against the stored vector for each collection.
    - Tested against a stubbed Qdrant and Ollama.
