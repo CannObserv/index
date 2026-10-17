@@ -270,11 +270,15 @@ inside a knob window:
      fingerprint, commit, and install it.
    - **Rollback:** the old tag in `ollama-run.sh`, plus the snapshot.
 
-**Throughput:** on 2 vCPU with one Ollama slot, 0.34.0 re-embeds about
-0.8 s per point. A sample of 384 took 309 s, so the store's 48k points take
-about 11 hours. That's longer than one window. Either the window grows, or
+**Throughput, measured** (D6's timed figure, 2026-10-17): the full gate on
+0.34.0 ran `--dry-run --batch 8` over the whole store, 42,449 points in 16
+collections. It took **28,976 s (8.0 h), about 0.68 s per point**: 0.66 for
+code, 0.98 for artifacts, which are longer chunks. Every point read cosine
+1.000000. That's more than one 6.5-hour window. Either the window grows, or
 `--apply` runs per collection (`--collection`) across windows, and the
 cross-repo merge stays mixed in between. #11 measured 0.40.5 at 2.1× faster.
+Re-embedding from empty costs the same embeddings, plus each client's
+chunking.
 
 `reembed.py` rebuilds each point's text as SocratiCode 1.14.0 did: the
 prefix, then `relativePath` (code) or `context:<name>:<path.normalize(path)>`
