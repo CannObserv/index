@@ -1,7 +1,7 @@
 ---
 title: Pin the embedding engine, detect a change, and re-embed the whole store when one is chosen
 date: 2026-10-16
-status: draft
+status: done
 ---
 
 # Embedding engine changes (#11)
