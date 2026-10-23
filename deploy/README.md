@@ -178,8 +178,25 @@ container at all. Keeping our own tag stops a locally-built image from
 impersonating upstream's. Built, from the checkout's root:
 
 ```bash
-docker build -t socraticode/ollama-slim:0.34.0 deploy/ollama-slim
+docker build --pull --no-cache -t socraticode/ollama-slim:0.34.0 deploy/ollama-slim
+uv run pytest tests/deploy/test_ollama_image.py
 ```
+
+**`--pull --no-cache`, so the CA bundle is today's (#13).** The `ollama`
+stage is pinned by digest, so this never changes `/usr/bin/ollama`, and a
+rebuild at the same version is no engine change. `ubuntu:24.04` and its
+`ca-certificates` aren't pinned. The image's Go 1.26 trusts its bundle as
+given, so a stale base or a cached apt layer keeps a root distrusted since
+the build: the 2026-10-17 build kept `emSign ECC Root CA - G3` after the
+eMudhra compromise (CannObserv/processor#66). The test parses the built
+image's bundle and fails on any root it lists as distrusted. Then restart
+`ollama.service`, and `engine-fingerprint.py check` passes: it compares
+vectors, not image IDs.
+
+Docker loads its own roots once per process, so after a host store fix,
+**restart `docker.service` before any pull**. That restarts `qdrant` and
+`ollama` too (`Requires=docker.service`): take `qdrant-recovery.sh snapshot`
+first and run `check` after.
 
 **Measured on this host, 2026-09-11**, reproducing replicator#88 independently:
 9.18 GB → **221 MB**, and against the same volume, model and prompt the two
