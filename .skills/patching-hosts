@@ -8,6 +8,9 @@ posture scheduled
 window Tue 05:15-11:45
 window Wed 05:15-11:45
 window Thu 05:15-11:45
+# Out-of-cycle, for TS-2026-013 (#12): the origin:pkgs.tailscale.com lane
+# alone. Removed once the run ends.
+window Fri 13:55-15:55
 
 # qdrant-cert-renew.timer: Mon 04:00 plus up to 1h RandomizedDelaySec; it
 # restarts Qdrant when the certificate changed.
