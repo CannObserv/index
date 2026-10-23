@@ -8,9 +8,6 @@ posture scheduled
 window Tue 05:15-11:45
 window Wed 05:15-11:45
 window Thu 05:15-11:45
-# Out-of-cycle, for #13 (processor#66): docker.service's restart and the
-# ollama-slim rebuild. Removed once the run ends.
-window Fri 16:45-18:45
 
 # qdrant-cert-renew.timer: Mon 04:00 plus up to 1h RandomizedDelaySec; it
 # restarts Qdrant when the certificate changed.
