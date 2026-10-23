@@ -14,7 +14,9 @@ ADDR="$(/usr/local/bin/tailnet-bind.sh)"
 docker rm -f qdrant >/dev/null 2>&1 || true
 
 # The API key travels by --env-file, never as --env on the command line: argv
-# is visible to every user on the host through /proc and to `docker inspect`.
+# is visible to every user on the host through /proc. `docker inspect` shows
+# it either way, in Config.Env, but only to root and the docker group, which
+# are root-equivalent already.
 #
 # Published on the tailnet address alone -- never 0.0.0.0, which on this host
 # would also mean exe.dev's internal 10.42.0.0/16. gRPC 6334 is deliberately
@@ -33,7 +35,7 @@ docker rm -f qdrant >/dev/null 2>&1 || true
 # the image still trusted after the eMudhra compromise (processor#66).
 #
 # These four are not secret and so live here rather than in the env-file,
-# which exists to keep the API key out of argv and `docker inspect`.
+# which exists to keep the API key out of argv.
 exec docker run --rm --name qdrant \
   --env-file /etc/socraticode/qdrant.env \
   --env QDRANT__SERVICE__ENABLE_TLS=1 \
