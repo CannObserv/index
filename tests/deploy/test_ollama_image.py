@@ -23,19 +23,12 @@ label.
 """
 
 import re
-import socket
-import ssl
-import subprocess
 from pathlib import Path
 
-import pytest
+from image_trust import DISTRUSTED, trusted_cns
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = REPO_ROOT / "deploy"
-HOST = "co-index"
-BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
-# Subject CNs. processor#66; https://exe.dev/security/emudhra-compromise.
-DISTRUSTED = {"emSign ECC Root CA - G3"}
 
 BASE = re.compile(r"^FROM ollama/ollama:(\S+?)(?:@(sha256:[0-9a-f]+))?(?:\s+AS\s+\S+)?$", re.M)
 VERSION = re.compile(r"^\d+\.\d+\.\d+$")
@@ -81,21 +74,9 @@ def test_the_runbook_builds_from_todays_base_and_archive() -> None:
 
 
 def _trusted_cns() -> list[str]:
-    """The subject CNs of the roots in the bundle of the image the unit runs."""
-    if socket.gethostname() != HOST:
-        pytest.skip(f"not {HOST}")
+    """The roots of the image the unit runs."""
     [image] = set(_run_images())
-    pem = subprocess.run(
-        ["docker", "run", "--rm", "--network", "none", "--entrypoint", "/bin/cat", image, BUNDLE],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.load_verify_locations(cadata=pem)
-    return [
-        v for ca in ctx.get_ca_certs() for rdn in ca["subject"] for k, v in rdn if k == "commonName"
-    ]
+    return trusted_cns(image)
 
 
 def test_the_image_bundle_parses() -> None:

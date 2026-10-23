@@ -151,7 +151,7 @@ again in ten minutes, a missed renewal window closes for good.
 | `setup.sh.template` | first-boot script; `__TAILSCALE_KEY__` substituted at provision time. Joins the tailnet and nothing else. |
 | `ollama-slim/Dockerfile` | CPU-only Ollama, 221 MB against 9.19 GB, embeddings bitwise identical to the stock image (CannObserv/replicator#88). Its base is pinned to a version and a digest (#11): changing it is an [engine change](#engine-change). |
 | `qdrant.service`, `ollama.service` | the long-running units. A clean `systemctl stop qdrant` records success (`SuccessExitStatus=143`) and an out-of-band SIGTERM (`docker stop qdrant`) still restarts it (`Restart=always`, #4). Ollama exits 0 on SIGTERM and has `Restart=always` for the same case (#5). Stop either with `systemctl stop`, which never restarts. The start limit sits in `[Unit]`, the only place systemd reads it. |
-| `qdrant-run.sh`, `ollama-run.sh` | their `ExecStart=`: `docker run` with the publish bound to the tailnet address only (D3). |
+| `qdrant-run.sh`, `ollama-run.sh` | their `ExecStart=`: `docker run` with the publish bound to the tailnet address only (D3). Qdrant's image is pinned to a version and a digest, with telemetry off (#13): changing it is a [Qdrant upgrade](#qdrant-upgrade). |
 | `tailnet-bind.sh` | prints this node's tailnet address, waiting up to 60 s for `tailscaled` to assign one. Called by both run scripts and the check-in. |
 | `qdrant-cert-renew.{sh,service,timer}` | weekly TLS renewal (D14, above). |
 | `index-checkin.{sh,service,timer}` | every 10 min, reports to co-status's dead-man's timer (D10). Its credentials are `STATUS_API_KEY` and `STATUS_MONITOR_ID` in `/etc/socraticode/status.env` (`0600 root:root`, never in git); without either it exits 1 before probing anything (#8). co-status reports a run of `alert` check-ins once, and *has cleared* on the next `ok` (CannObserv/status#28). Each check-in sends its findings' `check:subject` list, in the checks' fixed order, as `metadata.fault`, so a change in the set reports at once rather than waiting for the clear (#10). |
@@ -303,3 +303,59 @@ prefix, then `relativePath` (code) or `context:<name>:<path.normalize(path)>`
 cut at `contextLength` UTF-16 code units. A newer SocratiCode that changes
 any of that fails the gate. That failure is the gate working, not a bug in
 the gate.
+
+## Qdrant upgrade
+
+**The image is a version and a digest** (`qdrant-run.sh`, #13), because
+Qdrant migrates storage on start and only from the previous minor version.
+So an upgrade goes **one minor version at a time**, each started on the
+store until it is ready. A pull of a newer tag is never an upgrade. Upgrade
+for a reason (a fix, or a CA bundle, as in #13). Inside a knob window:
+
+1. **Rehearse offline,** from a fresh `sudo qdrant-recovery.sh snapshot`:
+   restore it into a loopback candidate on the current version, then start
+   that storage on each minor version's latest patch in turn. At each step,
+   compare the collections, exact point counts, `status: green`, and exact
+   dense and sparse top-10s against the first step, and check for `WARN` or
+   `ERROR` in the log. RRF ties reorder from run to run, so compare hybrid
+   results as sets.
+
+   ```bash
+   sudo mkdir -p /var/tmp/qdrant-rehearsal
+   docker run -d --name qdrant-rehearsal -p 127.0.0.1:16333:6333 \
+     -e QDRANT__TELEMETRY_DISABLED=true -v /var/tmp/qdrant-rehearsal:/qdrant/storage \
+     -v /var/backups/qdrant-<utc>.snapshot:/snap/full.snapshot:ro \
+     qdrant/qdrant:<current> ./entrypoint.sh --storage-snapshot /snap/full.snapshot
+   # then, per step: docker rm -f qdrant-rehearsal, and docker run the same
+   # storage on the next version, without --storage-snapshot
+   ```
+
+2. **In the window:** `index-inflight.sh` reads 0, then take a fresh
+   snapshot. `sudo systemctl stop qdrant.service`, then copy the stopped
+   store for rollback: `sudo cp -a /var/lib/qdrant /var/lib/qdrant.pre-<new>`.
+   Start each intermediate version on the store, on loopback, until
+   `/readyz` answers, then stop it:
+
+   ```bash
+   docker run -d --rm --name qdrant-step -p 127.0.0.1:16333:6333 \
+     --env-file /etc/socraticode/qdrant.env -e QDRANT__TELEMETRY_DISABLED=true \
+     -v /var/lib/qdrant:/qdrant/storage qdrant/qdrant:<step>
+   ```
+
+   Pin the new version and its digest in `qdrant-run.sh`, install it, then
+   `sudo systemctl start qdrant.service`.
+3. **Verify:** `qdrant-recovery.sh check <counts>`, `uv run pytest
+   tests/deploy/test_qdrant_run.py tests/deploy/test_installed.py`, and the
+   next check-in.
+4. **Rollback:** stop the unit, put `/var/lib/qdrant.pre-<new>` back as
+   `/var/lib/qdrant`, restore the old pin, and start the unit. Delete the copy
+   once the next check-ins are clean.
+
+**Measured, 2026-10-23** (#13, v1.17.0 → v1.18.3 → v1.19.2 → v1.20.0): 41
+collections, 48,477 points. Each step was ready in 4–6 s with no `WARN` or
+`ERROR`, counts and statuses were unchanged, and the exact dense and sparse
+top-10s were identical in all 16 collections. SocratiCode's calls (create,
+payload index, upsert, retrieve, filtered scroll, delete, hybrid RRF query)
+all work on 1.20.0. SocratiCode 1.14 through 1.16 pin `@qdrant/js-client-rest`
+`~1.18.0`. Against a server two minor versions ahead, that client logs a
+compatibility warning at startup and still works.

@@ -25,6 +25,10 @@ docker rm -f qdrant >/dev/null 2>&1 || true
 # node's full MagicDNS name -- the short name `index` is not in its SAN, so
 # every client must use https://index.taild0fb76.ts.net:6333.
 #
+# The image is a version and a digest (#13): a new Qdrant migrates storage
+# one minor version at a time, so changing this line is an upgrade, never a
+# pull (deploy/README.md, "Qdrant upgrade").
+#
 # Telemetry off (#13): it was Qdrant's only routine outbound TLS, through roots
 # the image still trusted after the eMudhra compromise (processor#66).
 #
@@ -39,4 +43,4 @@ exec docker run --rm --name qdrant \
   --publish "${ADDR}:6333:6333" \
   --volume /var/lib/qdrant:/qdrant/storage \
   --volume /etc/socraticode/tls:/tls:ro \
-  qdrant/qdrant:v1.17.0
+  qdrant/qdrant:v1.20.0@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2
