@@ -357,5 +357,6 @@ collections, 48,477 points. Each step was ready in 4–6 s with no `WARN` or
 top-10s were identical in all 16 collections. SocratiCode's calls (create,
 payload index, upsert, retrieve, filtered scroll, delete, hybrid RRF query)
 all work on 1.20.0. SocratiCode 1.14 through 1.16 pin `@qdrant/js-client-rest`
-`~1.18.0`. Against a server two minor versions ahead, that client logs a
-compatibility warning at startup and still works.
+`~1.18.0`, two minor versions behind the server, but build it with
+`checkCompatibility: false`, so the gap goes unchecked and unlogged. The
+upgrade's evidence is the calls above, not the client's version check.
