@@ -21,6 +21,9 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+# Keep only a failed run's basetemp, and one at most (#16, the disk GC's repo-knobs.md).
+tmp_path_retention_count = 1
+tmp_path_retention_policy = "failed"
 
 [tool.ruff]
 line-length = 100
