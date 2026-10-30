@@ -80,9 +80,9 @@ fi
 days_left=$(( ( $(date -d "$(openssl x509 -in /etc/socraticode/tls/qdrant.crt -noout -enddate | cut -d= -f2)" +%s) - $(date +%s) ) / 86400 ))
 [ "$days_left" -gt 21 ] || add tls cert "certificate expires in ${days_left} day(s)"
 
-# Headroom, because a full disk stops an index without stopping a container.
-free_pct=$(df --output=pcent / | tail -1 | tr -dc '0-9')
-[ "$free_pct" -lt 90 ] || add disk root "root filesystem ${free_pct}% used"
+# No headroom check here: a full disk stops an index without stopping a
+# container, so `/` pages on the cohort disk GC's own sensor and monitor,
+# co-index-disk-headroom (#16). One here too would page one disk twice.
 
 # `|| true` is load-bearing, not defensive noise. Under `set -o pipefail` a
 # grep that matches nothing fails the whole pipeline and `set -e` kills the

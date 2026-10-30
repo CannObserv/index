@@ -70,8 +70,6 @@ def host(tmp_path: Path) -> Path:
     bin_dir.mkdir()
     _stub(bin_dir / "tailnet-bind.sh", "echo 100.64.0.1\n")
     _stub(bin_dir / "openssl", "echo 'notAfter=Jan  1 00:00:00 2099 GMT'\n")
-    # The runner's own disk would otherwise decide whether `disk:root` is a finding.
-    _stub(bin_dir / "df", "echo Use%; echo ' 42%'\n")
     # Logs its argv, prints STUB_FP_OUT, exits STUB_FP_EXIT (0: no drift).
     _stub(
         bin_dir / "engine-fingerprint.py",
@@ -263,6 +261,17 @@ def test_a_healthy_host_sends_ok_with_an_empty_fault(host: Path) -> None:
     body = _body(host)
     assert body["status"] == "ok", body["variables"]["findings"]
     assert body["variables"]["finding_count"] == 0
+    assert body["metadata"] == {"fault": []}
+
+
+def test_a_full_disk_is_the_disk_gcs_finding_not_this_ones(host: Path) -> None:
+    """``/``'s headroom pages on ``co-index-disk-headroom``, the cohort disk GC's
+    sensor (#16, CannObserv/status#72). Here too, one disk would page twice."""
+    _write(host, "status.env", STATUS_ENV)
+    _stub(host / "bin" / "df", "echo Use%; echo ' 99%'\n")
+    assert _run(host, healthy=True).returncode == 0
+    body = _body(host)
+    assert body["status"] == "ok", body["variables"]["findings"]
     assert body["metadata"] == {"fault": []}
 
 
