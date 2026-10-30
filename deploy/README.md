@@ -161,6 +161,12 @@ again in ten minutes, a missed renewal window closes for good.
 | `qdrant-recovery.sh` | Qdrant's recovery point for a patching run (#9), which `patching-hosts` can't take: the knob has no line for Qdrant. `sudo qdrant-recovery.sh snapshot` writes the point counts and a full snapshot, copied **out of the container** (`--rm` discards its snapshots directory), mode 600, with the sha256 for the owner's off-node copy. `sudo qdrant-recovery.sh check <counts file>` after a step that stopped Qdrant: fails on a collection gone or emptied, or a real query with no hits. |
 | `apt-preferences.d/tailscale` | scopes `pkgs.tailscale.com`, which the knob follows: the site at 100, below Ubuntu, and `tailscale` and its keyring at 600 (#9). |
 
+**The disk GC is not in `deploy/`** (#16). It is Provisioner's cohort GC and headroom sensor, pulled and installed by the vendored `maintaining-host-disk` skill, which also updates and removes it. Never edit the installed copy. Its units are `cannobserv-disk-gc.timer` (daily) and `cannobserv-disk-headroom.timer` (every 10 min), and its journald drop-in caps the journal at 512M. This host's own files are in `/etc/cannobserv/disk-gc/`:
+- `disk-gc.conf`: the template's tiers plus `worktrees` and `docker`. `docker` is on because `ollama-slim` is built here; it never removes a container, a volume or a tagged image. The lines are 85/80, and patching-hosts reads them as its floor.
+- `checkin.key`: the `co-index` tenant's key, copied from `status.env`.
+
+`/`'s headroom pages on `co-index-disk-headroom`, not on the check-in.
+
 **On `co-index` the image keeps its own tag, `socraticode/ollama-slim:<version>`**, the version the Dockerfile pins (#11).
 replicator#88 records that the `ollama/ollama:latest` tag is load-bearing,
 because `ensureOllamaContainerReady` guards on presence alone —

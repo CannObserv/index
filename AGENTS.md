@@ -52,6 +52,8 @@ exe.dev VM `co-index` (`pdx`, 2 vCPU / 8 GB / 30 GB, proxy `private`), tailnet n
 | `ollama.service` | Docker, slim CPU image, `nomic-embed-text` (D5, D7) | `/api/tags` |
 | `qdrant-cert-renew.timer` | weekly, `Persistent=true` | `systemctl list-timers` |
 | `index-checkin.timer` | every 10 min → co-status's dead-man's timer (CannObserv/status) | a missed check-in alerts there |
+| `cannobserv-disk-gc.timer` | the cohort disk GC, daily 05:15 UTC (#16). Provisioner's, installed by the `maintaining-host-disk` skill, not from `deploy/` | `sudo journalctl -u cannobserv-disk-gc` |
+| `cannobserv-disk-headroom.timer` | every 10 min, `/` at 85/80 → `co-index-disk-headroom` (CannObserv/status#72) | a missed check-in alerts there |
 
 `qdrant.service` and `ollama.service` are `Requires=docker.service`: **restarting Docker restarts both.**
 
