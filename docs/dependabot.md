@@ -53,7 +53,7 @@ if ! git merge-base --is-ancestor origin/main "$H"; then
 fi
 
 # 2. CI on that head, both jobs (lint, test). Then make sure it's still that head.
-gh pr checks "$N" --watch
+gh pr checks "$N" --watch || echo "STOP: red, or no checks on the new head yet; read again in a minute"
 [ "$(pr_head)" = "$H" ] || echo "STOP: head moved under the watch; start again"
 
 # 3. Read the release notes for every version in between, not the diff.
