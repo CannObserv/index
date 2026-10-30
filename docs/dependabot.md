@@ -12,7 +12,7 @@ What the bot proposes here, and how one of its PRs lands (#23). Config:
 |---|---|---|
 | `github-actions` | `uses:` tags in `.github/workflows/` | one PR per action, weekly, 7-day cooldown |
 | `uv` | the `dev` group in `pyproject.toml` / `uv.lock` | one `dev-tools` PR, weekly, 7-day cooldown |
-| security updates | any locked package with an advisory | one PR per advisory, **no cooldown** |
+| security updates | any locked package with an advisory | one PR per vulnerable dependency, **no cooldown** |
 
 **Off, on purpose:** `docker`, because `deploy/ollama-slim`'s digest pin is an
 engine change (#11, D19); and `pre-commit`, which has local hooks only. The uv
