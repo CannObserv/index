@@ -1,0 +1,44 @@
+# Proposes the bumps nothing else does (#23). Each PR is gated by CI like any
+# other, and lands by docs/dependabot.md's merge path. Guarded by
+# tests/ci/test_dependabot.py and test_dependabot_cooldown.py: a mistyped
+# config stops producing PRs without erroring anywhere a person looks.
+#
+# Not here, on purpose: docker (deploy/ollama-slim's digest pin is an engine
+# change, #11, D19) and pre-commit (local hooks only, nothing to bump). The
+# guard's HELD_BACK carries each reason. The uv *binary* CI runs isn't moved
+# by any block: that's #25.
+version: 2 # version 1 is ignored without an error
+updates:
+  - package-ecosystem: "github-actions" # a typo opens nothing and reports nothing
+    directory: "/" # scans .github/workflows/; "/.github/workflows" is silence
+    schedule:
+      interval: "weekly" # missing, and the block is rejected in Dependabot's tab only
+    # The default is 5, and past it no version update opens, and nothing says
+    # so. One PR per action (2 today); the guard derives the bound.
+    open-pull-requests-limit: 10
+    # Version updates only, never security updates. A release gets a week to
+    # be yanked or flagged before it's proposed, as #19 did for virtualenv by
+    # hand. github-actions takes default-days only, no semver-*-days.
+    cooldown:
+      default-days: 7
+    # The commit lands on main as-is: `chore: bump …`, AGENTS.md's form.
+    commit-message:
+      prefix: "chore"
+
+  - package-ecosystem: "uv"
+    directories: ["/"] # one per uv.lock
+    schedule:
+      interval: "weekly"
+    # `auto` resolves to `widen` for a library, which uv doesn't support
+    # (dependabot-core#15290). Even this raises floors on in-range bumps.
+    versioning-strategy: increase-if-necessary
+    # Above 0 runtime dependencies + 1 group x 1 directory; the guard derives it.
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore"
+    # Everything here is dev tooling (pre-commit, pytest, pyyaml, ruff): one PR.
+    groups:
+      dev-tools:
+        dependency-type: "development"

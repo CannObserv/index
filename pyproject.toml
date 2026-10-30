@@ -15,6 +15,7 @@ package = false
 dev = [
     "pre-commit>=4.6.2,<5",
     "pytest>=9.1.1,<10",
+    "pyyaml>=6.0.3,<7",
     "ruff>=0.16.5,<0.17",
 ]
 
@@ -34,3 +35,13 @@ extend-exclude = ["docs/plans/", "skills-vendor/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP"]
+
+# tests/ci/test_dependabot.py is a copy of adopting-dependabot's asset, edited
+# only in its ADAPT block so it diffs cleanly against the skill's next
+# version. Upstream formats at 88 and two of its lines pass 100: lint it, but
+# leave its layout alone.
+[tool.ruff.lint.per-file-ignores]
+"tests/ci/test_dependabot.py" = ["E501"]
+
+[tool.ruff.format]
+exclude = ["tests/ci/test_dependabot.py"]
