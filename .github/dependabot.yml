@@ -1,6 +1,6 @@
 # Proposes the bumps nothing else does (#23). Each PR is gated by CI like any
 # other, and lands by docs/dependabot.md's merge path. Guarded by
-# tests/ci/test_dependabot.py and test_dependabot_cooldown.py: a mistyped
+# tests/ci/test_dependabot.py and test_dependabot_local.py: a mistyped
 # config stops producing PRs without erroring anywhere a person looks.
 #
 # Not here, on purpose: docker (deploy/ollama-slim's digest pin is an engine

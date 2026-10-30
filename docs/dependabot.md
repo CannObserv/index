@@ -4,7 +4,7 @@ What the bot proposes here, and how one of its PRs lands (#23). Config:
 [.github/dependabot.yml](../.github/dependabot.yml). Guards:
 [tests/ci/test_dependabot.py](../tests/ci/test_dependabot.py) (the
 `adopting-dependabot` skill's asset, edited only in its ADAPT block) and
-[test_dependabot_cooldown.py](../tests/ci/test_dependabot_cooldown.py).
+[test_dependabot_local.py](../tests/ci/test_dependabot_local.py).
 
 ## What's on
 
