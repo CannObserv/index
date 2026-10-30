@@ -59,10 +59,11 @@ exe.dev VM `co-index` (`pdx`, 2 vCPU / 8 GB / 30 GB, proxy `private`), tailnet n
 
 **Where this repo is worked on: `co-index` itself** (D15, which amends D8; D18). One checkout of *this* repo. **Never** a client checkout, a commit to a client repo, or a Node toolchain on this host (VS Code's private runtime is not one, D15). Nothing here indexes (D11).
 
-**Credentials:** `.env` (git-ignored, 0600) holds `GH_TOKEN`, scoped to this repo only, and one `GH_TOKEN_<REPO>` per cohort repo, for issues there only (D18): `GH_TOKEN="$GH_TOKEN_NOTIFIER" gh issue create -R CannObserv/notifier …`. Load with `set -a; . ./.env; set +a`. Push without putting the token in argv or a URL:
+**Credentials:** `.env` (git-ignored, 0600) holds `GH_TOKEN`, scoped to this repo only, and one `GH_TOKEN_<REPO>` per cohort repo, for issues there only (D18): `GH_TOKEN="$GH_TOKEN_NOTIFIER" gh issue create -R CannObserv/notifier …`. Load with `set -a; . ./.env; set +a`. Plain `git push` works: a credential helper in this clone's `.git/config`, scoped to github.com, reads `GH_TOKEN` from `.env` when git asks, so the token is never in argv, a URL or a tracked file. The skills refresh hook pushes through it. `.git/config` isn't tracked, so a new clone sets it once:
 
 ```bash
-git -c credential.helper= -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f' push
+git config credential.https://github.com.helper ''
+git config --add credential.https://github.com.helper '!f() { test "$1" = get || exit 0; echo username=x-access-token; sed -n "s/^GH_TOKEN=//p" /home/exedev/index/.env | sed "s/^/password=/"; }; f'
 ```
 
 ## Conventions
@@ -75,4 +76,4 @@ git -c credential.helper= -c 'credential.helper=!f() { echo username=x-access-to
 
 ## Agent Skills
 
-Vendored as submodules under `skills-vendor/` (gregoryfoster/skills, obra/superpowers), symlinked into `skills/` and `.claude/skills/`. Add or refresh with the `managing-skills` skill. A fresh clone needs `git submodule update --init`.
+Vendored as submodules under `skills-vendor/` (gregoryfoster/skills, obra/superpowers), symlinked into `skills/` and `.claude/skills/`. Add or refresh with the `managing-skills` skill. A `SessionStart` hook (`.claude/settings.json`) refreshes them once per UTC day on `main`, commits and pushes the bump; log in `.git/skills-update.log`. `.skills/doctor.sh` repairs dangling skill symlinks (`git submodule update --init`); a fresh clone's first session fails its hook until it has run.
