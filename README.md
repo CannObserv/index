@@ -5,5 +5,6 @@ Deploy surface and operator tooling for **`co-index`**, the CannObserv cohort's 
 - **Design record:** [docs/plans/2026-09-11-shared-qdrant-vm-design.md](docs/plans/2026-09-11-shared-qdrant-vm-design.md)
 - **Host runbook:** [deploy/README.md](deploy/README.md)
 - **Installing the store key into a client repo:** [docs/installing-the-key.md](docs/installing-the-key.md)
+- **Dependabot, and landing its PRs:** [docs/dependabot.md](docs/dependabot.md)
 
 Moved from [CannObserv/notifier](https://github.com/CannObserv/notifier) with history ([notifier#90](https://github.com/CannObserv/notifier/issues/90)).
