@@ -60,7 +60,8 @@ gh pr checks "$N" --watch || echo "STOP: red, or no checks on the new head yet; 
 
 # 4. The ship gate, on the exact commit.
 git worktree add -q --detach ".worktrees/dependabot-$N" "$H"
-( cd ".worktrees/dependabot-$N" && scripts/pre-ship.sh )
+( cd ".worktrees/dependabot-$N" && scripts/pre-ship.sh ) ||
+  echo "STOP: gate red; git worktree remove --force .worktrees/dependabot-$N"
 
 # 5. Fast-forward main to it. The remote refuses a non-fast-forward, so if main
 #    moved since step 1 (the hook's daily push, say), go back to step 1.
