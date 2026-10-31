@@ -72,9 +72,9 @@ git worktree remove ".worktrees/dependabot-$N"
 
 Then read CI on `main` for `$H`, by job, and fast-forward the deploy
 checkout: `git pull --ff-only` on `main`, then `uv sync --locked`. Nothing
-else will. The hook never
-pulls: behind `origin/main`, its next push is rejected as non-fast-forward and
-rolled back, every session, until someone does.
+else will. The hook never pulls: behind `origin/main`, its next push is
+rejected as non-fast-forward and rolled back, every session, until someone
+fast-forwards it.
 
 - **One at a time.** Each landing puts every other open Dependabot PR behind
   `main`, so expect one rebase per PR.
