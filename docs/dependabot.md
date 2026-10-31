@@ -70,8 +70,10 @@ git push origin "$H:refs/heads/main"
 git worktree remove ".worktrees/dependabot-$N"
 ```
 
-Then read CI on `main` for `$H`, by job. The deploy checkout catches up with
-`git pull --ff-only` on `main`, or the next push the hook makes.
+Then read CI on `main` for `$H`, by job, and fast-forward the deploy
+checkout: `git pull --ff-only` on `main`. Nothing else will. The hook never
+pulls: behind `origin/main`, its next push is rejected as non-fast-forward and
+rolled back, every session, until someone does.
 
 - **One at a time.** Each landing puts every other open Dependabot PR behind
   `main`, so expect one rebase per PR.
