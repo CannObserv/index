@@ -4,9 +4,8 @@
 # sync, and no network needed to bootstrap a clone.
 #
 # These hooks do not run pytest. CI does (.github/workflows/ci.yml), and so
-# does the ship gate (`pre-ship.sh`, in the shipping-work-python-fastapi skill
-# rather than the repo's scripts/). A green pre-commit proves style, not
-# correctness.
+# does the ship gate (`scripts/pre-ship.sh`, which mirrors CI step for step).
+# A green pre-commit proves style, not correctness.
 #
 # Both hooks are read-only: they report violations rather than rewriting files
 # mid-commit. Fix with `uv run ruff format .` / `uv run ruff check --fix .`.
