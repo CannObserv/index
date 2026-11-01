@@ -90,6 +90,15 @@ def test_required_version_is_a_floor_dependabot_meets() -> None:
     )
 
 
+def test_no_uv_toml_shadows_the_floor() -> None:
+    """A root uv.toml replaces pyproject.toml's [tool.uv] for uv, so the floor
+    stops being enforced on clones. setup-uv skips a uv.toml without
+    required-version and still reads pyproject.toml: two sources (#25)."""
+    assert not (REPO_ROOT / "uv.toml").exists(), (
+        "uv.toml shadows [tool.uv] in pyproject.toml: move its settings there instead"
+    )
+
+
 def test_the_floor_reads_only_a_lower_bound() -> None:
     """Guard the guard: a pin or a ceiling isn't a floor."""
     assert _floor(">=0.13.5") == (0, 13, 5)
