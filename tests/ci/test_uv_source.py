@@ -39,14 +39,16 @@ _IMMUTABLE = re.compile(r"^v\d+\.\d+\.\d+$|^[0-9a-f]{40}$")
 _FLOOR = re.compile(r"^>=\s*(\d+)\.(\d+)\.(\d+)$")
 
 
+def _jobs() -> dict[str, dict]:
+    return yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"]
+
+
+def _setup_uv_in(job: dict) -> list[dict]:
+    return [s for s in job.get("steps", []) if str(s.get("uses", "")).split("@")[0] == SETUP_UV]
+
+
 def _setup_uv_steps() -> list[dict]:
-    jobs = yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"]
-    return [
-        step
-        for job in jobs.values()
-        for step in job.get("steps", [])
-        if str(step.get("uses", "")).split("@")[0] == SETUP_UV
-    ]
+    return [step for job in _jobs().values() for step in _setup_uv_in(job)]
 
 
 def _floor(spec: str) -> tuple[int, ...] | None:
@@ -54,9 +56,10 @@ def _floor(spec: str) -> tuple[int, ...] | None:
     return tuple(int(g) for g in m.groups()) if m else None
 
 
-def test_every_job_sets_up_uv() -> None:
-    """Guard the guards: with no setup-uv step found, the rest pass on nothing."""
-    assert len(_setup_uv_steps()) == 2, "expected setup-uv in both jobs (lint, test)"
+def test_every_job_sets_up_uv_once() -> None:
+    """Guard the guards: a job without setup-uv is one they never read."""
+    counts = {name: len(_setup_uv_in(job)) for name, job in _jobs().items()}
+    assert counts and set(counts.values()) == {1}, f"setup-uv steps per job: {counts}"
 
 
 @pytest.mark.parametrize("step", _setup_uv_steps(), ids=lambda s: s["uses"])
