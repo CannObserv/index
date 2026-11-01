@@ -5,8 +5,8 @@
 #
 # Not here, on purpose: docker (deploy/ollama-slim's digest pin is an engine
 # change, #11, D19) and pre-commit (local hooks only, nothing to bump). The
-# guard's HELD_BACK carries each reason. The uv *binary* CI runs isn't moved
-# by any block: that's #25.
+# guard's HELD_BACK carries each reason. No block moves the uv *binary*:
+# pyproject.toml's required-version is a floor, and CI floats above it (#25).
 version: 2 # version 1 is ignored without an error
 updates:
   - package-ecosystem: "github-actions" # a typo opens nothing and reports nothing

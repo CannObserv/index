@@ -10,6 +10,13 @@ dependencies = []
 
 [tool.uv]
 package = false
+# A floor, never a pin (#25). An older uv fails here with a clear message
+# instead of rewriting uv.lock (revision 5, written by 0.13.5). CI's setup-uv
+# reads it too and installs the newest uv that meets it. Dependabot's uv
+# updater enforces it as well, and runs 0.13.5 (dependabot-core uv/Dockerfile,
+# 2026-11-01): raise the floor past that and every dev-tools PR fails, in
+# Dependabot's tab only. Guarded by tests/ci/test_uv_source.py.
+required-version = ">=0.13.5"
 
 [dependency-groups]
 dev = [

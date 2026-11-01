@@ -18,7 +18,7 @@ TDD required. Red → Green → Refactor. No production code without a failing t
 
 ## Environment & Tooling
 
-Python ≥3.12, uv, pytest, ruff. No Python package: the tests drive shell scripts as subprocesses.
+Python ≥3.12, uv ≥0.13.5 (`required-version`, #25), pytest, ruff. No Python package: the tests drive shell scripts as subprocesses.
 
 `pre-commit` runs ruff only, never pytest. Only CI (`.github/workflows/ci.yml`: `lint`, `test`) proves correctness.
 
@@ -40,7 +40,7 @@ uv run pre-commit install   # once per clone
 | `scripts/pre-ship.sh` | `shipping-work`'s gate (#3): CI's steps, in CI's order, stops at the first failure. Dev-only; clients never run it |
 | `tests/deploy/` | Behaviour and drift tests for the above |
 | `.github/dependabot.yml` | `github-actions` + `uv` (dev group), weekly, 7-day cooldown (#23). PRs land by fast-forward from a detached worktree, never via the deploy checkout's `main`: [docs/dependabot.md](docs/dependabot.md) |
-| `tests/ci/` | Guards for the Dependabot config. `test_dependabot.py` is the `adopting-dependabot` asset: edit its ADAPT block only |
+| `tests/ci/` | Guards for the Dependabot config, and for where CI and clones get uv (`test_uv_source.py`). `test_dependabot.py` is the `adopting-dependabot` asset: edit its ADAPT block only |
 
 **Clients run `install_qdrant_key.sh` from a read-only clone of this repo** (public, no credential), never a copy: its tests pin exactly the properties a copy loses first. Procedure, and rotation: [docs/installing-the-key.md](docs/installing-the-key.md).
 

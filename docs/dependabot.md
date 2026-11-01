@@ -15,9 +15,16 @@ What the bot proposes here, and how one of its PRs lands (#23). Config:
 | security updates | any locked package with an advisory | one PR per vulnerable dependency, **no cooldown** |
 
 **Off, on purpose:** `docker`, because `deploy/ollama-slim`'s digest pin is an
-engine change (#11, D19); and `pre-commit`, which has local hooks only. The uv
-*binary* CI runs is #25, and `setup-uv` is frozen at `@v7`, which Dependabot
-can't see (#26).
+engine change (#11, D19); and `pre-commit`, which has local hooks only. No
+block moves the uv *binary*: `pyproject.toml`'s `required-version` is a floor
+(`>=0.13.5`), and CI's `setup-uv` installs the newest uv that meets it (#25).
+`setup-uv` is frozen at `@v7`, which Dependabot can't see (#26).
+
+**Never raise that floor past the uv Dependabot runs.** Its `uv` updater
+enforces `required-version` too, and on 2026-11-01 runs 0.13.5
+(dependabot-core's `uv/Dockerfile`). Past it, every `dev-tools` PR fails, and
+says so only in Dependabot's tab. `tests/ci/test_uv_source.py` holds both
+bounds.
 
 Nothing either ecosystem moves is installed on `co-index`. **No landing ever
 restarts a service.**
