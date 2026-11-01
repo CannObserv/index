@@ -12,6 +12,10 @@ range to the newest matching uv, so CI floats and a clone too old for
 runs, which enforces it too: above that, every ``dev-tools`` PR fails, in
 Dependabot's tab only. Raise ``DEPENDABOT_UV`` only after reading
 dependabot-core's ``uv/Dockerfile``.
+
+**setup-uv is on an immutable release.** From v8 on upstream publishes
+``vX.Y.Z`` tags only, so a major-form pin (``@v7``) is never proposed past and
+looks current (#26).
 """
 
 import re
@@ -31,6 +35,7 @@ CI = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 
 SETUP_UV = "astral-sh/setup-uv"
+_IMMUTABLE = re.compile(r"^v\d+\.\d+\.\d+$|^[0-9a-f]{40}$")
 _FLOOR = re.compile(r"^>=\s*(\d+)\.(\d+)\.(\d+)$")
 
 
@@ -52,6 +57,15 @@ def _floor(spec: str) -> tuple[int, ...] | None:
 def test_every_job_sets_up_uv() -> None:
     """Guard the guards: with no setup-uv step found, the rest pass on nothing."""
     assert len(_setup_uv_steps()) == 2, "expected setup-uv in both jobs (lint, test)"
+
+
+@pytest.mark.parametrize("step", _setup_uv_steps(), ids=lambda s: s["uses"])
+def test_setup_uv_is_an_immutable_release(step: dict) -> None:
+    ref = step["uses"].split("@", 1)[1]
+    assert _IMMUTABLE.match(ref), (
+        f"{step['uses']}: pin a vX.Y.Z tag or a SHA. Upstream floats no major tag "
+        "from v8 on, so Dependabot never moves a major-form pin (#26)"
+    )
 
 
 @pytest.mark.parametrize("step", _setup_uv_steps(), ids=lambda s: s["uses"])

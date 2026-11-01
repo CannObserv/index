@@ -22,9 +22,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      # No `version:`: setup-uv reads pyproject.toml's required-version, as uv
-      # does on any clone (#25). Guarded by tests/ci/test_uv_source.py.
-      - uses: astral-sh/setup-uv@v7
+      # setup-uv: an immutable tag, since upstream floats no major from v8 on
+      # (#26). No `version:`: it reads pyproject.toml's required-version, as
+      # uv does on any clone (#25). Guarded by tests/ci/test_uv_source.py.
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: "3.12"
           enable-cache: true
@@ -40,7 +41,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: "3.12"
           enable-cache: true

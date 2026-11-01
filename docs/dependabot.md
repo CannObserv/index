@@ -18,7 +18,8 @@ What the bot proposes here, and how one of its PRs lands (#23). Config:
 engine change (#11, D19); and `pre-commit`, which has local hooks only. No
 block moves the uv *binary*: `pyproject.toml`'s `required-version` is a floor
 (`>=0.13.5`), and CI's `setup-uv` installs the newest uv that meets it (#25).
-`setup-uv` is frozen at `@v7`, which Dependabot can't see (#26).
+`setup-uv` is pinned to an immutable `vX.Y.Z` tag: from v8 on upstream floats
+no major, so a major-form pin would freeze where Dependabot can't see it (#26).
 
 **Never raise that floor past the uv Dependabot runs.** Its `uv` updater
 enforces `required-version` too, and on 2026-11-01 runs 0.13.5
