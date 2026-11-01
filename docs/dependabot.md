@@ -74,8 +74,19 @@ git worktree add -q --detach ".worktrees/dependabot-$N" "$H"
 # 5. Fast-forward main to it. The remote refuses a non-fast-forward, so if main
 #    moved since step 1 (the hook's daily push, say), go back to step 1.
 #    Never rebase locally: that lands a commit CI didn't test.
-git push origin "$H:refs/heads/main"
-git worktree remove ".worktrees/dependabot-$N"
+#    Cleanup needs --force: a CR initializes the worktree's submodules, and git
+#    then refuses a plain remove, even after `submodule deinit` (#28). So it
+#    runs only once the push landed, and only on a clean tree, where --force
+#    can't discard anything (ignored .venv and caches don't count).
+if git push origin "$H:refs/heads/main"; then
+  if [ -z "$(git -C ".worktrees/dependabot-$N" status --porcelain)" ]; then
+    git worktree remove --force ".worktrees/dependabot-$N"
+  else
+    echo "STOP: uncommitted work in the worktree; read it before removing"
+  fi
+else
+  echo "STOP: push refused; main moved since step 1, so go back to step 1"
+fi
 ```
 
 Then read CI on `main` for `$H`, by job, and fast-forward the deploy
