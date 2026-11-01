@@ -77,8 +77,12 @@ git worktree add -q --detach ".worktrees/dependabot-$N" "$H"
 #    Cleanup needs --force: a CR initializes the worktree's submodules, and git
 #    then refuses a plain remove, even after `submodule deinit` (#28). So it
 #    runs only once the push landed, and only on a clean tree, where --force
-#    can't discard anything (ignored .venv and caches don't count).
-if git push origin "$H:refs/heads/main"; then
+#    can't discard anything (ignored .venv and caches don't count). The HEAD
+#    check comes first: a fix committed in the worktree isn't $H until you
+#    set it, and pushing $H without it, then removing, would lose the fix.
+if [ "$(git -C ".worktrees/dependabot-$N" rev-parse HEAD)" != "$H" ]; then
+  echo "STOP: the worktree isn't at \$H; see 'A bump that needs a code change'"
+elif git push origin "$H:refs/heads/main"; then
   if [ -z "$(git -C ".worktrees/dependabot-$N" status --porcelain)" ]; then
     git worktree remove --force ".worktrees/dependabot-$N"
   else
@@ -99,7 +103,8 @@ fast-forwards it.
   `main`, so expect one rebase per PR.
 - **A bump that needs a code change** (a ruff release with a new rule, say):
   commit the fix in the detached worktree on top of `$H`, run `pre-ship.sh`,
-  and push the new tip by SHA. The fast-forward still marks the PR merged.
+  then `H=$(git -C ".worktrees/dependabot-$N" rev-parse HEAD)`, and step 5
+  pushes that tip by SHA. The fast-forward still marks the PR merged.
   Pushing to the bot's branch instead stops it rebasing that PR.
 - **A major action bump:** compare it with upstream's newest release
   (`inventory.sh --upstream`). A gap is a frozen tag or a fresh major. File the
