@@ -10,7 +10,7 @@ Deploy surface and operator tooling for **`co-index`**, the cohort's shared Socr
 
 Moved out of CannObserv/notifier with history (notifier#90, #1). **A bare `#N` in history before that move, or `notifier#N` anywhere, is a notifier issue.** From here on, `#N` means this repo.
 
-Design record, with every decision (D0–D16): [docs/plans/2026-09-11-shared-qdrant-vm-design.md](docs/plans/2026-09-11-shared-qdrant-vm-design.md). Host runbook: [deploy/README.md](deploy/README.md).
+Design record, with every decision (D0–D20): [docs/plans/2026-09-11-shared-qdrant-vm-design.md](docs/plans/2026-09-11-shared-qdrant-vm-design.md). Host runbook: [deploy/README.md](deploy/README.md).
 
 ## Development Methodology
 
@@ -59,7 +59,7 @@ exe.dev VM `co-index` (`pdx`, 2 vCPU / 8 GB / 30 GB, proxy `private`), tailnet n
 
 `qdrant.service` and `ollama.service` are `Requires=docker.service`: **restarting Docker restarts both.**
 
-**Where this repo is worked on: `co-index` itself** (D15, which amends D8; D18). One checkout of *this* repo. **Never** a client checkout, a commit to a client repo, or a Node toolchain on this host (VS Code's private runtime is not one, D15). Nothing here indexes (D11).
+**Where this repo is worked on: `co-index` itself** (D15, which amends D8; D18; D20). One checkout of *this* repo. **Never** a client checkout or a commit to a client repo. Node is for this repo's own SocratiCode client only, and only once `exedev` is out of group `docker` (D20). This host may index `index` and nothing else (D11).
 
 **Credentials:** `.env` (git-ignored, 0600) holds `GH_TOKEN`, scoped to this repo only, and one `GH_TOKEN_<REPO>` per cohort repo, for issues there only (D18): `GH_TOKEN="$GH_TOKEN_NOTIFIER" gh issue create -R CannObserv/notifier …`. Load with `set -a; . ./.env; set +a`. Plain `git push` works: a credential helper in this clone's `.git/config`, scoped to github.com, reads `GH_TOKEN` from `.env` when git asks, so the token is never in argv, a URL or a tracked file. The skills refresh hook pushes through it. `.git/config` isn't tracked, so a new clone sets it once:
 
