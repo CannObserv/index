@@ -35,9 +35,11 @@ inflight /usr/local/bin/index-inflight.sh
 origin pkgs.tailscale.com follow
 hold tailscale tailscale
 
-# No datastore line: the grammar has none for Qdrant (to be filed upstream,
-# #9 step 4). Before any step that stops Qdrant, `sudo qdrant-recovery.sh
-# snapshot`, copied off the node; after it, `qdrant-recovery.sh check`.
+# Qdrant's recovery point, taken by recovery-point.sh and checked after a
+# restart (gregoryfoster/skills#367). The URL is the name: the certificate
+# covers only it (D14). The key file is root-only.
+datastore qdrant qdrant.service qdrant https://index.taild0fb76.ts.net:6333 /etc/socraticode/qdrant.key
+
 # exe-setup.service re-runs the platform's setup script every boot; its
 # Tailscale auth key is revoked (owner, 2026-10-08), so a re-run joins nothing.
 exception setup-script:redelivered 2027-01-08 the script's Tailscale auth key is revoked
