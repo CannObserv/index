@@ -39,6 +39,9 @@ hold tailscale tailscale
 # restart (gregoryfoster/skills#367). The URL is the name: the certificate
 # covers only it (D14). The key file is root-only.
 datastore qdrant qdrant.service qdrant https://index.taild0fb76.ts.net:6333 /etc/socraticode/qdrant.key
+# The probe wants each service After= each datastore. Ollama never calls
+# Qdrant: clients call each directly, so its start order doesn't matter.
+exception ordering:ollama.service 2027-05-03 Ollama doesn't use Qdrant; clients call each directly
 
 # exe-setup.service re-runs the platform's setup script every boot; its
 # Tailscale auth key is revoked (owner, 2026-10-08), so a re-run joins nothing.
