@@ -1,7 +1,7 @@
 ---
 title: File the issue suite for index usage telemetry and setup checks
 date: 2026-11-04
-status: draft
+status: in progress — epic #32 (A–F #33–#38, G–H gregoryfoster/skills#573–#574); step 6 waits on #34
 ---
 
 # File the issue suite for index usage telemetry and setup checks
