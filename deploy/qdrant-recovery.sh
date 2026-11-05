@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
-# #9: Qdrant's recovery point for a patching run, and the check after a step
-# that stopped it. patching-hosts has no knob line for Qdrant, so its
-# recovery-point.sh takes nothing here. The owner's rule is a snapshot, off the
-# node, before any step that stops Qdrant: a re-index is expensive.
+# #9, #30: Qdrant's recovery point and check for the steps patching-hosts
+# doesn't run: a Docker restart, a Qdrant upgrade, an engine change
+# (deploy/README.md). The owner's rule is a snapshot, off the node, before any
+# step that stops Qdrant: a re-index is expensive.
+#
+# A patching run needs no snapshot from here: the knob's datastore line has
+# recovery-point.sh take it. Its counts file is BEFORE's format, so `check`
+# takes it after a step for the one thing the skill's own check doesn't run:
+# a real query.
 #
 #   sudo qdrant-recovery.sh snapshot        counts, then a full snapshot
 #   sudo qdrant-recovery.sh check BEFORE    counts against BEFORE, and a query
+#
+# The query's embed waits EMBED_T seconds (60), up to 3 tries: Ollama
+# serialises embeds, so a client's index run can queue it behind a batch.
 #
 # Root, because the API key is 0600 root. It reaches curl as a header file
 # from a process substitution, never as an argument: /proc has no hidepid here.
@@ -41,6 +49,24 @@ counts() {
 
 total() { awk '{ s += $2 } END { print s + 0 }'; }
 
+# The query's embedding, as JSON. Only a timeout is retried: it's a queue, not
+# a fault. curl reads --max-time 0 as no limit, so check refuses one first.
+embed() {
+  local i out rc
+  for i in 1 2 3; do
+    rc=0
+    out=$(curl -sS --fail-with-body --max-time "$EMBED_T" "$OURL/api/embed" \
+      -d '{"model": "nomic-embed-text", "input": "search_query: how is the API key installed"}') \
+      || rc=$?
+    [ "$rc" -eq 28 ] || break
+    echo "qdrant-recovery: embed: no answer in $EMBED_T s (try $i of 3)" >&2
+  done
+  [ "$rc" -ne 28 ] \
+    || die "embed: no answer in $EMBED_T s, 3 tries: a client's index run may be ahead of it in Ollama's queue; retry later, or with a longer EMBED_T"
+  [ "$rc" -eq 0 ] || die "embed failed (curl exit $rc): $out"
+  json 'json.dumps(d["embeddings"][0])' <<<"$out" || die "embed answered no embedding: $out"
+}
+
 snapshot() {
   local utc before name start dest
   need_key
@@ -70,6 +96,8 @@ snapshot() {
 
 check() {
   local before=$1 now c n m vec emb body hits bad=0
+  EMBED_T=${EMBED_T:-60}
+  [[ $EMBED_T =~ ^[1-9][0-9]*$ ]] || die "EMBED_T must be a whole number of seconds, 1 or more: not '$EMBED_T'"
   need_key
   [ -r "$before" ] || die "can't read $before"
   now=$(counts)
@@ -97,9 +125,7 @@ check() {
   [ -n "$c" ] || die "no codebase_ collection to query"
   vec=$(q "$QURL/collections/$c" \
     | json '"" if "size" in (v := d["result"]["config"]["params"]["vectors"]) else next(iter(v))')
-  emb=$(curl -sS --fail-with-body --max-time 60 "$OURL/api/embed" \
-    -d '{"model": "nomic-embed-text", "input": "search_query: how is the API key installed"}' \
-    | json 'json.dumps(d["embeddings"][0])')
+  emb=$(embed)
   body=$(python3 -c 'import json, sys
 q = {"query": json.loads(sys.argv[1]), "limit": 3}
 if sys.argv[2]:
