@@ -13,7 +13,8 @@
 #   sudo qdrant-recovery.sh check BEFORE    counts against BEFORE, and a query
 #
 # The query's embed waits EMBED_T seconds (60), up to 3 tries: Ollama
-# serialises embeds, so a client's index run can queue it behind a batch.
+# serialises embeds, so a client's index run can queue it behind a batch. Set
+# it after sudo (sudo EMBED_T=180 ...): sudo drops it from the caller's env.
 #
 # Root, because the API key is 0600 root. It reaches curl as a header file
 # from a process substitution, never as an argument: /proc has no hidepid here.
@@ -62,7 +63,7 @@ embed() {
     echo "qdrant-recovery: embed: no answer in $EMBED_T s (try $i of 3)" >&2
   done
   [ "$rc" -ne 28 ] \
-    || die "embed: no answer in $EMBED_T s, 3 tries: a client's index run may be ahead of it in Ollama's queue; retry later, or with a longer EMBED_T"
+    || die "embed: no answer in $EMBED_T s, 3 tries: a client's index run may be ahead of it in Ollama's queue; retry later, or longer: sudo EMBED_T=<seconds> qdrant-recovery.sh check <counts file>"
   [ "$rc" -eq 0 ] || die "embed failed (curl exit $rc): $out"
   json 'json.dumps(d["embeddings"][0])' <<<"$out" || die "embed answered no embedding: $out"
 }

@@ -315,7 +315,8 @@ def test_three_timed_out_embeds_fail_loudly(host: Path) -> None:
     assert len(_embeds(host)) == 3
     assert "Traceback" not in done.stderr
     assert "no answer in 1 s, 3 tries" in done.stderr
-    assert "EMBED_T" in done.stderr
+    # `EMBED_T=… sudo …` loses it to sudo's env_reset: name the form that works.
+    assert "sudo EMBED_T=" in done.stderr
     assert "/points/query" not in (host / "curl.log").read_text()
 
 
