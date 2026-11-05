@@ -95,7 +95,7 @@ elif (method, path) == ("POST", O + "/api/embed"):
     if st.get("embed_error"):
         print(json.dumps({"error": st["embed_error"]}))
         sys.exit(22)
-    out = {"embeddings": [[0.1, 0.2]]}
+    out = st.get("embed_answer", {"embeddings": [[0.1, 0.2]]})
 elif method == "POST" and path.endswith("/points/query"):
     out = {"result": {"points": [{"id": i, "score": 0.68} for i in range(st["hits"])]}}
 else:
@@ -327,6 +327,13 @@ def test_an_embed_that_failed_is_not_retried(host: Path) -> None:
     assert len(_embeds(host)) == 1
     assert "Traceback" not in done.stderr
     assert 'model \\"nomic-embed-text\\" not found' in done.stderr
+
+
+def test_an_embed_answer_with_no_embedding_fails_with_a_message(host: Path) -> None:
+    done = _check(host, embed_answer={"embeddings": []})
+    assert done.returncode != 0
+    assert "Traceback" not in done.stderr
+    assert 'embed answered no embedding: {"embeddings": []}' in done.stderr
 
 
 @pytest.mark.parametrize("limit", ["0", "-5", "1.5", "soon"])

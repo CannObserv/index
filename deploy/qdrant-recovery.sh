@@ -65,7 +65,8 @@ embed() {
   [ "$rc" -ne 28 ] \
     || die "embed: no answer in $EMBED_T s, 3 tries: a client's index run may be ahead of it in Ollama's queue; retry later, or longer: sudo EMBED_T=<seconds> qdrant-recovery.sh check <counts file>"
   [ "$rc" -eq 0 ] || die "embed failed (curl exit $rc): $out"
-  json 'json.dumps(d["embeddings"][0])' <<<"$out" || die "embed answered no embedding: $out"
+  json 'json.dumps(d["embeddings"][0])' <<<"$out" 2>/dev/null \
+    || die "embed answered no embedding: $out"
 }
 
 snapshot() {
