@@ -34,8 +34,8 @@ usage() { die "usage: qdrant-recovery.sh snapshot | check BEFORE-COUNTS"; }
 need_key() { [ -r "$KEY_FILE" ] || die "can't read $KEY_FILE: run it through sudo"; }
 
 key() { printf 'api-key: %s\n' "$(cat "$KEY_FILE")"; }
-# q LIMIT ARGS...: the limit is each caller's, never the environment's (#39):
-# curl reads --max-time 0 as no limit, and a stray T (sudo -E) would reach it.
+# q LIMIT ARGS...: each caller sets its own limit. None comes from the
+# environment (#39): curl reads --max-time 0 as no limit at all.
 q() {
   local t=$1
   shift
