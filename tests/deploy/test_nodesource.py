@@ -118,15 +118,18 @@ def test_bare_invocation_prints_usage_naming_both_subcommands() -> None:
     assert "nodesource.sh check" in done.stderr
 
 
-def _stub_install_env(tmp_path: Path, members: str) -> dict[str, str]:
-    """``id`` says root, ``getent`` prints group ``docker`` with ``members``,
-    and every other tool the install reaches fails loudly, so a refusal is
-    proven to come before any fetch or write."""
+def _stub_install_env(tmp_path: Path, members: str, procs: str = "") -> dict[str, str]:
+    """``id`` says root, ``getent`` prints group ``docker`` (gid 107) with
+    ``members``, ``ps`` prints ``procs`` as exedev's ``pid supgid`` lines, and
+    every other tool the install reaches fails loudly, so a refusal is proven
+    to come before any fetch or write."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
+    (tmp_path / "procs").write_text(procs)
     stubs = {
         "id": 'if [ "$1" = -u ]; then echo 0; else exec /usr/bin/id "$@"; fi',
         "getent": f'[ "$1 $2" = "group docker" ] && echo "docker:x:107:{members}"',
+        "ps": f'[ "$*" = "-u exedev -o pid=,supgid=" ] || exit 9\ncat "{tmp_path / "procs"}"',
     }
     for tool in ("curl", "gpg", "install", "apt-get", "choom"):
         stubs[tool] = f'echo "{tool} reached" >&2; exit 99'
@@ -145,9 +148,31 @@ def test_install_refuses_while_exedev_is_in_group_docker(tmp_path: Path, members
     assert "reached" not in done.stderr
 
 
+# 2026-11-06: the group database was clean, and these still held gid 107: the
+# VS Code server (a window reload doesn't restart it), an orphaned VS Code CLI
+# agent host, and the user manager, which linger keeps up since boot.
+STALE = "  312 4,24,27,107,1000\n82888 107,1000\n"
+
+
+@pytest.mark.parametrize("procs", [STALE, "  312 107\n"])
+def test_install_refuses_while_an_exedev_process_holds_the_group(
+    tmp_path: Path, procs: str
+) -> None:
+    """Leaving the group changes the database, not a running process: one
+    started before keeps the gid, and so does everything it starts."""
+    env = _stub_install_env(tmp_path, "", procs)
+    done = subprocess.run(["bash", str(SCRIPT), "install"], capture_output=True, text=True, env=env)
+    assert done.returncode == 2
+    assert "still hold group docker" in done.stderr
+    assert "312" in done.stderr
+    assert "reached" not in done.stderr
+
+
 def test_install_passes_the_group_guard_once_exedev_is_out(tmp_path: Path) -> None:
-    """Out of the group, the install goes on to fetch the key, which the stub fails."""
-    env = _stub_install_env(tmp_path, "")
+    """Out of the group, every process included, the install goes on to
+    fetch the key, which the stub fails. A gid that merely contains 107's
+    digits is another group."""
+    env = _stub_install_env(tmp_path, "", "  312 4,1070,1000\n 400 1107,4\n")
     done = subprocess.run(["bash", str(SCRIPT), "install"], capture_output=True, text=True, env=env)
     assert "curl reached" in done.stderr
 

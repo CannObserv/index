@@ -48,16 +48,26 @@ install_nodesource() {
   [ "$(id -u)" -eq 0 ] || { echo "install needs root: sudo bash $0 install" >&2; exit 2; }
   # D20: exedev leaves group docker before Node lands, so a session that falls
   # back to SocratiCode's managed mode fails at `docker info` instead of
-  # starting a Qdrant on every interface. Read from the group database: a
-  # session started before the change still holds it until it restarts.
-  local member
+  # starting a Qdrant on every interface. The database first, then every
+  # process: one started before the change keeps the gid, and so does all it
+  # starts. On 2026-11-06 the VS Code server, an orphaned VS Code CLI and the
+  # user manager (linger) still held it (#18, CR 7).
+  local member gid holders
   for member in $(getent group docker | cut -d: -f4 | tr , ' '); do
     if [ "$member" = exedev ] || [ "$member" = "${SUDO_USER:-}" ]; then
       echo "REFUSED: $member is in group docker (D20). First: sudo gpasswd -d $member docker," >&2
-      echo "  then restart the VS Code server and check \`id -nG\`" >&2
+      echo "  then restart what still holds it (deploy/README.md, \"Node\")" >&2
       exit 2
     fi
   done
+  gid="$(getent group docker | cut -d: -f3)"
+  holders="$(ps -u exedev -o pid=,supgid= |
+    awk -v g="$gid" '{ n = split($2, a, ","); for (i = 1; i <= n; i++) if (a[i] == g) { print $1; break } }')"
+  if [ -n "$gid" ] && [ -n "$holders" ]; then
+    echo "REFUSED: exedev processes still hold group docker (D20): $(echo $holders)" >&2
+    echo "  Restart them first (deploy/README.md, \"Node\")" >&2
+    exit 2
+  fi
   local tmp got
   tmp="$(mktemp -d)"
   # shellcheck disable=SC2064 # expanded now: $tmp is local, and gone by the time EXIT fires
