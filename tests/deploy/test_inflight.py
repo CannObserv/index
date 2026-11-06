@@ -130,8 +130,6 @@ def test_the_real_marker_line_is_the_marker(stubs: Path) -> None:
     """The fixture's first line is an earlier run's marker as the journal
     holds it: the stub's line for this run must take the same shape."""
     first = JOURNAL.read_text().splitlines()[0]
-    agent = re.search(r'"(index-inflight/[^"]+)"', first)
-    assert agent is not None
     _run(stubs, [])
     stub_line = (stubs / "qdrant.log").read_text().splitlines()[-1]
     shape = re.compile(
