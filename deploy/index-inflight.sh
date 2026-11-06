@@ -2,9 +2,15 @@
 # #9: the patching knob's `inflight`. Prints how many writes Qdrant served in
 # the last five minutes; patching-hosts gates each step on 0.
 #
-# Clients index from their own nodes (D11), so nothing on this host sees an
-# index run except Qdrant's access log. A run pauses between embedding batches,
-# so five quiet minutes are evidence, not proof.
+# Each client indexes from its own node (D11), and this node is one of them
+# for `index` (D20). Nothing on this host sees any of those runs except
+# Qdrant's access log. A run pauses between embedding batches, so five quiet
+# minutes are evidence, not proof.
+#
+# The log is read from qdrant.service's journal, never `docker logs` (#18):
+# a knob command never runs as root, and D20 takes exedev out of group
+# docker. qdrant-run.sh runs `docker run` attached, so Qdrant's stdout is the
+# unit's, and exedev reads the system journal through group adm.
 #
 # Writes only: a search or a retrieve is POST too, and a session searching is
 # not an index run. Fails closed: when the log can't be read, it exits 1 and
@@ -28,12 +34,27 @@ curl -s -o /dev/null --max-time 5 -A "$marker" "$QURL/collections" \
   || unknown "qdrant didn't answer the marker request"
 
 for _ in 1 2 3 4 5; do
-  log="$(docker logs --since 5m qdrant 2>&1)" || unknown "docker logs qdrant failed"
+  log="$(journalctl -u qdrant.service --since -5min -o cat --no-pager)" \
+    || unknown "journalctl -u qdrant.service failed"
   grep -qF "\"$marker\"" <<<"$log" && break
   log=
   sleep 0.2
 done
 [ -n "$log" ] || unknown "qdrant's access log doesn't show the marker request"
+
+# journald drops a unit's lines past its rate limit (10000 per 30s, scaled up
+# by free disk; Qdrant's peak was 1389, 2026-10-27), and a dropped write would
+# read as 0. It reports a drop, as the unit's own entry, when the unit's next
+# line arrives after the interval: the marker at the latest, so a drop in the
+# window shows before it, or the marker is dropped too. Matched whole, so a
+# client's user agent can't fake one.
+suppressed=0
+grep -qxE 'Suppressed [0-9]+ messages from qdrant\.service' <<<"$log" || suppressed=$?
+case $suppressed in
+  0) unknown "journald suppressed qdrant.service's lines in the window" ;;
+  1) ;;
+  *) unknown "grep failed on qdrant's log" ;;
+esac
 
 # The request line, as actix logs it: "METHOD /path?query HTTP/1.1".
 write='"((PUT|PATCH|DELETE) /collections/|POST /collections/[^/ ?"]+/points/(delete|payload|payload/delete|payload/clear|vectors/delete|batch)[ ?])'

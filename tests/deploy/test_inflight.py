@@ -1,15 +1,23 @@
 """Behaviour tests for deploy/index-inflight.sh, the patching knob's ``inflight`` (#9).
 
 ``patching-hosts`` refuses a step unless every ``inflight`` command prints
-``0`` and exits 0. Clients index from their own nodes (D11), so nothing on
-co-index sees a client's run, except Qdrant: its access log records every
-request. The script counts the **writes** in the last five minutes.
+``0`` and exits 0. Nothing on co-index sees an index run, its own (D20)
+included, except Qdrant: its access log records every request. The script
+counts the **writes** in the last five minutes.
 
+- **From the journal, not ``docker logs`` (#18).** ``qdrant-run.sh`` runs
+  ``docker run`` attached, so Qdrant's log is ``qdrant.service``'s journal,
+  which ``exedev`` reads through group ``adm``. The knob's commands never run
+  as root, and D20 takes ``exedev`` out of group ``docker``. Measured
+  2026-11-06 over 2 h: ``journalctl -o cat`` and ``docker logs`` printed the
+  same 1441 lines, and the write pattern counted 641 in each.
 - **Writes, not reads.** A search or a retrieve is ``POST`` too, and a session
   searching is not an index run. ``PUT``, ``PATCH`` and ``DELETE`` are writes,
   and so are the ``POST`` point endpoints that change points.
-- **Fail closed.** When ``docker logs`` fails, whether work is in flight is
-  unknown: the script exits non-zero and prints no count, and the gate refuses.
+- **Fail closed.** When the journal can't be read, whether work is in flight
+  is unknown: the script exits non-zero and prints no count, and the gate
+  refuses. So too when journald reports it dropped the unit's lines (its rate
+  limit): a dropped write would read as 0.
 - **A proxy.** A run pauses between embedding batches, so five quiet minutes
   are evidence, not proof.
 - **A silent log is not an idle one.** Qdrant doesn't log ``/readyz``, and
@@ -18,9 +26,16 @@ request. The script counts the **writes** in the last five minutes.
   401, carrying a unique ``User-Agent``. Until that marker is in the log, the
   count means nothing, and the script fails closed.
 
-``docker`` and ``curl`` are stubbed on ``PATH``; nothing reaches a real daemon
-or Qdrant. The ``curl`` stub plays Qdrant's logger: it appends the request's
-log line to what ``docker logs`` prints, unless ``QDRANT_LOGS=0``.
+``journalctl`` and ``curl`` are stubbed on ``PATH``; nothing reaches the real
+journal or Qdrant. The ``curl`` stub plays Qdrant's logger: it appends the
+request's log line to what ``journalctl`` prints, unless ``QDRANT_LOGS=0``.
+
+``fixtures/qdrant-journal.txt`` is ``journalctl -u qdrant.service -o cat``
+on co-index (2026-11-03..06): the restart of 2026-11-03T17:59Z, then one line
+for each request shape the store served in three days. Edited for a public
+repo only: the tailnet address is ``100.64.0.1``, and other projects'
+collection names are ``index``'s. Request lines, statuses and agents are as
+logged.
 """
 
 import os
@@ -33,6 +48,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "deploy" / "index-inflight.sh"
+JOURNAL = Path(__file__).parent / "fixtures" / "qdrant-journal.txt"
 
 
 def _line(method: str, path: str, status: int = 200, http: str = "1.1") -> str:
@@ -49,12 +65,14 @@ def _stub(path: Path, body: str) -> None:
 
 @pytest.fixture
 def docker(tmp_path: Path) -> Path:
-    """``docker`` logs its argv, prints ``$LOG`` and exits ``$RC``. ``curl``
+    """``journalctl`` logs its argv, prints ``$LOG`` and exits ``$RC``. ``curl``
     logs its argv and, as Qdrant would, appends the request's line to
     ``$LOG`` with its ``-A`` user agent, then exits ``$CURL_RC``."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    _stub(bin_dir / "docker", 'printf "%s\\n" "$*" >> "$ARGV_LOG"\ncat "$LOG"\nexit "${RC:-0}"\n')
+    _stub(
+        bin_dir / "journalctl", 'printf "%s\\n" "$*" >> "$ARGV_LOG"\ncat "$LOG"\nexit "${RC:-0}"\n'
+    )
     _stub(
         bin_dir / "curl",
         'printf "%s\\n" "$*" >> "$CURL_LOG"\n'
@@ -88,9 +106,69 @@ def _run(
     return subprocess.run(["bash", str(SCRIPT)], capture_output=True, text=True, env=env)
 
 
-def test_reads_the_last_five_minutes_of_qdrants_log(docker: Path) -> None:
+def test_reads_the_last_five_minutes_of_qdrants_journal(docker: Path) -> None:
+    """The unit's journal, messages only: ``-o cat`` prints each line as
+    Qdrant wrote it, as ``docker logs`` did. Never through ``docker`` (D20)."""
     _run(docker, [])
-    assert (docker / "argv").read_text() == "logs --since 5m qdrant\n"
+    assert (docker / "argv").read_text() == "-u qdrant.service --since -5min -o cat --no-pager\n"
+
+
+def test_never_calls_docker() -> None:
+    code = [ln for ln in SCRIPT.read_text().splitlines() if not ln.lstrip().startswith("#")]
+    assert not [ln for ln in code if re.search(r"\bdocker\b", ln)]
+
+
+def test_counts_the_writes_in_the_real_journal(docker: Path) -> None:
+    """The fixture's four writes: the metadata upsert, a payload index, a
+    points delete and a collection create. Its reads, a retrieve by id
+    included, and the restart's lines count nothing."""
+    done = _run(docker, JOURNAL.read_text().splitlines())
+    assert (done.returncode, done.stdout) == (0, "4\n")
+
+
+def test_the_real_marker_line_is_the_marker(docker: Path) -> None:
+    """The fixture's first line is an earlier run's marker as the journal
+    holds it: the stub's line for this run must take the same shape."""
+    first = JOURNAL.read_text().splitlines()[0]
+    agent = re.search(r'"(index-inflight/[^"]+)"', first)
+    assert agent is not None
+    _run(docker, [])
+    stub_line = (docker / "qdrant.log").read_text().splitlines()[-1]
+    shape = re.compile(
+        r"^\S+  INFO actix_web::middleware::logger: \S+ "
+        r'"GET /collections HTTP/2\.0" 401 56 "-" "index-inflight/\d+\.\d+" \d\.\d+$'
+    )
+    assert shape.match(first)
+    assert shape.match(stub_line)
+
+
+# journald's report, as it printed one for a transient unit on co-index
+# (2026-11-06, ``LogRateLimitBurst=5``), with this unit's name.
+SUPPRESSED = "Suppressed 29 messages from qdrant.service"
+
+
+def test_fails_closed_when_journald_dropped_qdrants_lines(docker: Path) -> None:
+    """journald drops a unit's lines past its rate limit and reports how
+    many when the next one arrives, as the unit's own entry. The marker is at
+    the latest that next line, so a drop in the window is reported before it."""
+    done = _run(docker, [_line("PUT", "/collections/c/points"), SUPPRESSED])
+    assert done.returncode != 0
+    assert done.stdout == ""
+    assert "suppressed" in done.stderr
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Suppressed 29 messages from ollama.service",
+        _line("GET", "/collections").replace("qdrant-js/1.18.0", SUPPRESSED),
+    ],
+)
+def test_another_report_is_not_a_drop(docker: Path, line: str) -> None:
+    """Another unit's report isn't this one's, and a client can't fake one
+    from its user agent: only journald's own line, whole, counts."""
+    done = _run(docker, [line])
+    assert (done.returncode, done.stdout) == (0, "0\n")
 
 
 def test_an_empty_log_prints_zero(docker: Path) -> None:
@@ -170,30 +248,32 @@ def test_counts_every_write_among_other_lines(docker: Path) -> None:
     assert (done.returncode, done.stdout) == (0, "3\n")
 
 
-def test_fails_closed_when_docker_logs_fails(docker: Path) -> None:
-    """``docker logs`` on a missing container prints its error and exits 1.
-    No count is printed, so the gate can't read an error as zero."""
-    done = _run(docker, ["Error response from daemon: No such container: qdrant"], rc=1)
+def test_fails_closed_when_journalctl_fails(docker: Path) -> None:
+    """Without group ``adm``, ``journalctl`` prints this and exits 1 (measured
+    as ``nobody``, 2026-11-06). No count is printed, so the gate can't read an
+    error as zero."""
+    done = _run(docker, ["No journal files were opened due to insufficient permissions."], rc=1)
     assert done.returncode != 0
     assert done.stdout == ""
     assert "unknown" in done.stderr
 
 
-def test_fails_closed_without_docker(tmp_path: Path) -> None:
+def test_fails_closed_without_journalctl(tmp_path: Path) -> None:
     env = {**os.environ, "PATH": str(tmp_path)}
     done = subprocess.run(["/usr/bin/bash", str(SCRIPT)], capture_output=True, text=True, env=env)
     assert done.returncode != 0
     assert done.stdout == ""
 
 
-def test_fails_closed_when_grep_fails(docker: Path) -> None:
-    """grep exits 1 for no match, which is a count of 0, and 2 for an error.
-    An error must not leave the script exiting 0 with nothing printed: the
-    gate would refuse, but say the work hadn't drained."""
-    # Fails the count alone, so the marker check before it still passes.
+@pytest.mark.parametrize("flags", ["-cE", "-qxE"])
+def test_fails_closed_when_grep_fails(docker: Path, flags: str) -> None:
+    """grep exits 1 for no match, which is a count of 0 or no drop, and 2 for
+    an error. An error must not leave the script exiting 0 with nothing
+    printed, nor read as no drop."""
+    # Fails one grep alone, so the marker check before it still passes.
     _stub(
         docker / "bin" / "grep",
-        "[[ $1 == -cE ]] && { echo 'grep: boom' >&2; exit 2; }\n"
+        f"[[ $1 == {flags} ]] && {{ echo 'grep: boom' >&2; exit 2; }}\n"
         f'exec {shutil.which("grep")} "$@"\n',
     )
     done = _run(docker, [_line("PUT", "/collections/c/points")])

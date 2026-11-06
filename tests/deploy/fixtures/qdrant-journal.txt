@@ -1,0 +1,29 @@
+2026-11-03T17:59:18.001429Z  INFO actix_web::middleware::logger: 100.64.0.1 "GET /collections HTTP/2.0" 401 56 "-" "index-inflight/3766616.1793728757947868582" 0.000070
+2026-11-03T17:59:18.905621Z  INFO actix_server::server: SIGTERM received; starting graceful shutdown
+2026-11-03T17:59:18.906916Z  INFO actix_server::worker: shutting down idle worker
+2026-11-03T17:59:18.906042Z  INFO actix_server::accept: accept thread stopped
+qdrant
+tailnet-bind: waiting up to 60s for tailscaled to assign an address
+tailnet-bind: address ready: 100.64.0.1
+           _                 _
+  __ _  __| |_ __ __ _ _ __ | |_
+ / _` |/ _` | '__/ _` | '_ \| __|
+| (_| | (_| | | | (_| | | | | |_
+ \__, |\__,_|_|  \__,_|_| |_|\__|
+    |_|
+Version: 1.20.0, build: 222b2e44
+Access web UI at https://localhost:6333/dashboard
+Agentic Skills: https://skills.qdrant.tech/
+2026-11-03T17:59:31.202025Z  INFO storage::content_manager::consensus::persistent: Loading raft state from ./storage/raft_state.json
+2026-11-03T19:07:08.901282Z  INFO actix_web::middleware::logger: 172.17.0.1 "PUT /collections/socraticode_metadata/points?wait=true HTTP/1.1" 200 75 "-" "qdrant-js/1.18.0" 0.073242
+2026-11-03T19:07:08.531600Z  INFO actix_web::middleware::logger: 172.17.0.1 "POST /collections/socraticode_metadata/points HTTP/1.1" 200 22154 "-" "qdrant-js/1.18.0" 0.007206
+2026-11-03T19:07:08.410119Z  INFO actix_web::middleware::logger: 172.17.0.1 "GET /collections/codebase_index HTTP/1.1" 200 532 "-" "qdrant-js/1.18.0" 0.002216
+2026-11-03T19:08:34.127000Z  INFO actix_web::middleware::logger: 172.17.0.1 "POST /collections/index_symgraph_file/points/scroll HTTP/1.1" 200 10637 "-" "qdrant-js/1.18.0" 0.092288
+2026-11-03T19:08:35.932537Z  INFO actix_web::middleware::logger: 172.17.0.1 "PUT /collections/context_index/index HTTP/1.1" 200 76 "-" "qdrant-js/1.18.0" 0.008490
+2026-11-03T19:07:09.459995Z  INFO actix_web::middleware::logger: 172.17.0.1 "POST /collections/codebase_index/points/delete HTTP/1.1" 200 76 "-" "qdrant-js/1.18.0" 0.001376
+2026-11-03T18:53:09.751458Z  INFO actix_web::middleware::logger: 100.64.0.1 "GET /collections HTTP/2.0" 200 1578 "-" "curl/8.5.0" 0.000784
+2026-11-03T19:13:46.453663Z  INFO actix_web::middleware::logger: 100.64.0.1 "POST /collections/index_symgraph_file/points/count HTTP/2.0" 200 57 "-" "curl/8.5.0" 0.005683
+2026-11-04T17:18:54.691033Z  INFO actix_web::middleware::logger: 172.17.0.1 "GET /collections/codebase_index HTTP/1.1" 404 88 "-" "qdrant-js/1.18.0" 0.015008
+2026-11-03T21:48:18.172698Z  INFO actix_web::middleware::logger: 172.17.0.1 "POST /collections/context_index/points/query HTTP/1.1" 200 2745 "-" "qdrant-js/1.18.0" 0.009909
+2026-11-04T17:19:51.993351Z  INFO actix_web::middleware::logger: 172.17.0.1 "PUT /collections/codebase_index HTTP/1.1" 200 53 "-" "qdrant-js/1.18.0" 0.233213
+2026-11-06T05:31:36.460861Z  INFO actix_web::middleware::logger: 172.17.0.1 "POST /collections/socraticode_metadata/points HTTP/2.0" 200 2233 "-" "node" 0.000608
