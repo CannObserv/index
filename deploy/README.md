@@ -253,9 +253,22 @@ store unit or deploy script runs `node`, `npx` or `npm`, and
 `deploy/apt-sources.list.d/nodesource.sources` (`node_26.x`); moving it is a
 deliberate edit, with `EXPECTED_MAJOR` in the test.
 
-**`exedev` is out of group `docker` first** (D20). The install refuses
-otherwise. After `sudo gpasswd -d exedev docker`, restart the VS Code server:
-an attached session keeps the group until then. Check `id -nG`.
+**`exedev` is out of group `docker` first** (D20). That means the database
+and every running process: one started before the change keeps the group, and
+so does everything it starts. The install refuses while either holds it. On
+2026-11-06, after `sudo gpasswd -d exedev docker`, three still did (#18):
+
+- **the VS Code server.** Reloading the window doesn't restart it. Run
+  "Remote-SSH: Kill VS Code Server on Host…" from the client, or
+  `pkill -u exedev -f '\.vscode-server'` from an ssh shell, then reconnect.
+- **an orphaned VS Code CLI** (`code-<hash> … agent host`, parent PID 1),
+  from an older build. Stop it with `kill <pid>`.
+- **the user manager**, which linger keeps up since boot, with its session
+  D-Bus: `sudo systemctl restart user@1000.service`. A session started by
+  exe.dev's `guestd` sits in `init.scope`, outside it, and survives.
+
+Then `id -nG` shows no `docker`, and `ps -u exedev -o pid=,supgid=` lists
+no process holding its gid (`test_host_access.py`).
 
 ```bash
 sudo bash scripts/nodesource.sh install   # refuses a key that isn't NodeSource's
