@@ -43,6 +43,35 @@ def test_this_session_is_not_in_group_docker() -> None:
     )
 
 
+def _holders(ps_lines: str, gid: int) -> list[str]:
+    """The pids among ``ps -o pid=,supgid=`` lines whose groups include ``gid``."""
+    return [
+        pid
+        for pid, _, groups in (ln.strip().partition(" ") for ln in ps_lines.splitlines())
+        if str(gid) in groups.strip().split(",")
+    ]
+
+
+def test_holders_reads_ps_by_whole_gid() -> None:
+    measured = "  312 4,24,27,107,1000\n82888 107,1000\n 401 4,1070,1000\n"
+    assert _holders(measured, 107) == ["312", "82888"]
+
+
+def test_no_exedev_process_holds_group_docker() -> None:
+    """Leaving the group changes the database, not a running process. On
+    2026-11-06, with the database clean, the VS Code server (a window reload
+    doesn't restart it), an orphaned VS Code CLI and the user manager (linger,
+    up since boot) all still held it, and so would all they started."""
+    gid = grp.getgrnam("docker").gr_gid
+    listed = subprocess.run(
+        ["ps", "-u", USER, "-o", "pid=,supgid="], capture_output=True, text=True, check=True
+    ).stdout
+    assert _holders(listed, gid) == [], (
+        'still in group docker. Fix: deploy/README.md, "Node": restart the VS Code server '
+        "and the user manager"
+    )
+
+
 def test_exedev_reads_qdrants_journal() -> None:
     """``index-inflight.sh`` reads ``qdrant.service``'s journal as the knob
     user. Without ``adm``, ``exedev``'s ``journalctl`` reads only its own user
