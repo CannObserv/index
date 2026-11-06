@@ -15,8 +15,8 @@ docker rm -f qdrant >/dev/null 2>&1 || true
 
 # The API key travels by --env-file, never as --env on the command line: argv
 # is visible to every user on the host through /proc. `docker inspect` shows
-# it either way, in Config.Env, but only to root and the docker group, which
-# are root-equivalent already.
+# it either way, in Config.Env, but only to root: the docker group would be
+# root-equivalent already, and D20 keeps exedev out of it.
 #
 # Published on the tailnet address alone -- never 0.0.0.0, which on this host
 # would also mean exe.dev's internal 10.42.0.0/16. gRPC 6334 is deliberately

@@ -157,7 +157,7 @@ again in ten minutes, a missed renewal window closes for good.
 | `index-checkin.{sh,service,timer}` | every 10 min, reports to co-status's dead-man's timer (D10). Its credentials are `STATUS_API_KEY` and `STATUS_MONITOR_ID` in `/etc/socraticode/status.env` (`0600 root:root`, never in git); without either it exits 1 before probing anything (#8). co-status reports a run of `alert` check-ins once, and *has cleared* on the next `ok` (CannObserv/status#28). Each check-in sends its findings' `check:subject` list, in the checks' fixed order, as `metadata.fault`, so a change in the set reports at once rather than waiting for the clear (#10). |
 | `needrestart.conf.d/index.conf` | needrestart lists restarts and never performs them (#2), so an apt run cannot bounce Docker, and Qdrant and Ollama with it. Install it before any apt run (Installing a change, below). `sudo needrestart -m u -r l -b` then prints `Disabling Ubuntu mode` and restarts nothing. |
 | `engine-fingerprint.{py,json}` | the check-in's engine check (#11). The `.json` holds five probes (code, an artifact label, uppercase XML, a mixed-case and a lowercase query) and the vectors the pinned engine gave them. A probe below cosine 0.99999 is the `ollama:engine` finding. A probe that couldn't be embedded is no finding, because a timeout behind a client's batch isn't drift. Recapture with `python3 -I deploy/engine-fingerprint.py capture http://index.taild0fb76.ts.net:11434 deploy/engine-fingerprint.json`, only as part of an [engine change](#engine-change). |
-| `index-inflight.sh` | the patching knob's `inflight` (#9): prints how many writes Qdrant served in the last 5 min, so a step waits out a client's index run. It first logs one unauthenticated request with a unique user agent, and exits 1, printing no count, unless that marker shows in the log: a silent log isn't an idle one. |
+| `index-inflight.sh` | the patching knob's `inflight` (#9): prints how many writes Qdrant served in the last 5 min, so a step waits out a client's index run, this host's own included (D20). It reads `qdrant.service`'s journal, which `exedev` reads through group `adm`, never `docker logs` (#18). It first logs one unauthenticated request with a unique user agent, and exits 1, printing no count, unless that marker shows in the log: a silent log isn't an idle one. It also exits 1 when journald reports dropping the unit's lines in the window. |
 | `qdrant-recovery.sh` | Qdrant's recovery point and check for the steps `patching-hosts` doesn't run: a Docker restart, a Qdrant upgrade, an engine change (#9, #30). A patching run takes no snapshot here: the knob's `datastore qdrant` line has `recovery-point.sh` take it. `sudo qdrant-recovery.sh snapshot` writes the point counts and a full snapshot, copied **out of the container** (`--rm` discards its snapshots directory), mode 600, with the sha256 for the owner's off-node copy. `sudo qdrant-recovery.sh check <counts file>` after a step that stopped Qdrant: fails on a collection gone or emptied, or a real query with no hits. A patching run's counts file, from its recovery point, works too, and adds the real query the skill's check doesn't run. The query's embed waits `EMBED_T` seconds (60), up to 3 tries on a timeout only: Ollama serialises embeds, so a client's index run can queue it. Set it after `sudo` (`sudo EMBED_T=180 qdrant-recovery.sh check …`): `EMBED_T=180 sudo …` loses it to sudo's `env_reset`, and the check runs at 60 s. |
 | `apt-preferences.d/tailscale` | scopes `pkgs.tailscale.com`, which the knob follows: the site at 100, below Ubuntu, and `tailscale` and its keyring at 600 (#9). |
 
@@ -184,7 +184,7 @@ container at all. Keeping our own tag stops a locally-built image from
 impersonating upstream's. Built, from the checkout's root:
 
 ```bash
-docker build --pull --no-cache -t socraticode/ollama-slim:0.34.0 deploy/ollama-slim
+sudo docker build --pull --no-cache -t socraticode/ollama-slim:0.34.0 deploy/ollama-slim
 uv run pytest tests/deploy/test_ollama_image.py
 ```
 
@@ -265,7 +265,7 @@ inside a knob window:
    one:
 
    ```bash
-   docker run -d --rm --name ollama-candidate -p 127.0.0.1:11435:11434 \
+   sudo docker run -d --rm --name ollama-candidate -p 127.0.0.1:11435:11434 \
      -v /var/lib/ollama/models:/root/.ollama/models:ro socraticode/ollama-slim:<new> serve
    sudo cat /etc/socraticode/qdrant.key \
      | python3 -I scripts/reembed.py --ollama http://127.0.0.1:11435 --dry-run --sample 24
@@ -328,11 +328,11 @@ for a reason (a fix, or a CA bundle, as in #13). Inside a knob window:
 
    ```bash
    sudo mkdir -p /var/tmp/qdrant-rehearsal
-   docker run -d --name qdrant-rehearsal -p 127.0.0.1:16333:6333 \
+   sudo docker run -d --name qdrant-rehearsal -p 127.0.0.1:16333:6333 \
      -e QDRANT__TELEMETRY_DISABLED=true -v /var/tmp/qdrant-rehearsal:/qdrant/storage \
      -v /var/backups/qdrant-<utc>.snapshot:/snap/full.snapshot:ro \
      qdrant/qdrant:<current> ./entrypoint.sh --storage-snapshot /snap/full.snapshot
-   # then, per step: docker rm -f qdrant-rehearsal, and docker run the same
+   # then, per step: sudo docker rm -f qdrant-rehearsal, and sudo docker run the same
    # storage on the next version, without --storage-snapshot
    ```
 
@@ -343,7 +343,7 @@ for a reason (a fix, or a CA bundle, as in #13). Inside a knob window:
    `/readyz` answers, then stop it:
 
    ```bash
-   docker run -d --rm --name qdrant-step -p 127.0.0.1:16333:6333 \
+   sudo docker run -d --rm --name qdrant-step -p 127.0.0.1:16333:6333 \
      --env-file /etc/socraticode/qdrant.env -e QDRANT__TELEMETRY_DISABLED=true \
      -v /var/lib/qdrant:/qdrant/storage qdrant/qdrant:<step>
    ```
