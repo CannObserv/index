@@ -34,15 +34,21 @@ usage() { die "usage: qdrant-recovery.sh snapshot | check BEFORE-COUNTS"; }
 need_key() { [ -r "$KEY_FILE" ] || die "can't read $KEY_FILE: run it through sudo"; }
 
 key() { printf 'api-key: %s\n' "$(cat "$KEY_FILE")"; }
-q() { curl -sS --fail-with-body --max-time "${T:-30}" -H @<(key) "$@"; }
+# q LIMIT ARGS...: the limit is each caller's, never the environment's (#39):
+# curl reads --max-time 0 as no limit, and a stray T (sudo -E) would reach it.
+q() {
+  local t=$1
+  shift
+  curl -sS --fail-with-body --max-time "$t" -H @<(key) "$@"
+}
 json() { python3 -c "import json, sys; d = json.load(sys.stdin); print($1)"; }
 
 # "<collection> <points>" per line, sorted by name; exact counts.
 counts() {
   local names c n
-  names=$(q "$QURL/collections" | json '"\n".join(sorted(c["name"] for c in d["result"]["collections"]))')
+  names=$(q 30 "$QURL/collections" | json '"\n".join(sorted(c["name"] for c in d["result"]["collections"]))')
   for c in $names; do
-    n=$(q -X POST -H 'Content-Type: application/json' -d '{"exact": true}' \
+    n=$(q 30 -X POST -H 'Content-Type: application/json' -d '{"exact": true}' \
       "$QURL/collections/$c/points/count" | json 'd["result"]["count"]')
     printf '%s %s\n' "$c" "$n"
   done
@@ -79,7 +85,7 @@ snapshot() {
   echo "counts: $before ($(wc -l <"$before") collections, $(total <"$before") points)"
 
   start=$(date +%s)
-  name=$(T=1800 q -X POST "$QURL/snapshots?wait=true" | json 'd["result"]["name"]')
+  name=$(q 1800 -X POST "$QURL/snapshots?wait=true" | json 'd["result"]["name"]')
   echo "snapshot: $name in $(($(date +%s) - start)) s"
 
   # Out of the container: its storage is a volume, its snapshots directory
@@ -91,7 +97,7 @@ snapshot() {
     rm -f "$dest"
     die "copying $name out of the container failed; it's still inside, under /qdrant/snapshots"
   fi
-  T=300 q -X DELETE "$QURL/snapshots/$name?wait=true" >/dev/null
+  q 300 -X DELETE "$QURL/snapshots/$name?wait=true" >/dev/null
   stat -c '%a %s %n' "$dest"
   sha256sum "$dest"
 }
@@ -125,7 +131,7 @@ check() {
   # collection, through the vector its config names.
   c=$(awk '$1 ~ /^codebase_/' <<<"$now" | sort -k2 -n | tail -1 | cut -d' ' -f1)
   [ -n "$c" ] || die "no codebase_ collection to query"
-  vec=$(q "$QURL/collections/$c" \
+  vec=$(q 30 "$QURL/collections/$c" \
     | json '"" if "size" in (v := d["result"]["config"]["params"]["vectors"]) else next(iter(v))')
   emb=$(embed)
   body=$(python3 -c 'import json, sys
@@ -133,7 +139,7 @@ q = {"query": json.loads(sys.argv[1]), "limit": 3}
 if sys.argv[2]:
     q["using"] = sys.argv[2]
 print(json.dumps(q))' "$emb" "$vec")
-  hits=$(q -X POST -H 'Content-Type: application/json' -d "$body" \
+  hits=$(q 30 -X POST -H 'Content-Type: application/json' -d "$body" \
     "$QURL/collections/$c/points/query" | json 'len(d["result"]["points"])')
   echo "query $c: $hits hits"
   [ "$hits" -gt 0 ] || bad=1

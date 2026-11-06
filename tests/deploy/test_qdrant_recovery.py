@@ -20,6 +20,9 @@ query the skill's own check doesn't run.
   embed may time out: each try waits ``EMBED_T`` seconds (60), and only a
   timeout is retried, up to 3 tries, then it fails with a message, not a hang.
 - **The API key never reaches an argv.** It goes to curl as a header file.
+- **Each Qdrant call's limit is the script's own** (#39): 1800 s for the
+  snapshot, 300 s for its delete, 30 s for the rest. Nothing reads one from
+  the environment, where a stray ``T=0`` would be no limit at all.
 
 The script runs from a copy whose host paths point into ``tmp_path``, with
 ``curl`` and ``docker`` stubbed on ``PATH``. Nothing reaches Qdrant or Docker.
@@ -343,3 +346,48 @@ def test_an_embed_limit_that_isnt_a_positive_integer_is_refused(host: Path, limi
     assert done.returncode != 0
     assert "EMBED_T" in done.stderr
     assert not (host / "curl.log").exists()
+
+
+def _qdrant_limits(host: Path) -> list[tuple[str, str]]:
+    """Each Qdrant call's method and path, with the ``--max-time`` it was sent."""
+    out = []
+    for call in (host / "curl.log").read_text().splitlines():
+        if ":6333/" not in call:
+            continue
+        args = call.split()
+        method = args[args.index("-X") + 1] if "-X" in args else "GET"
+        url = next(a for a in args if a.startswith("http")).split("?")[0]
+        out.append((f"{method} {url.split(':6333', 1)[1]}", args[args.index("--max-time") + 1]))
+    return out
+
+
+@pytest.mark.parametrize("stray", ["0", "soon", "5"])
+def test_snapshot_keeps_its_own_limits_whatever_t_says(host: Path, stray: str) -> None:
+    """A stray ``T`` (``sudo -E``) never reaches curl (#39): ``-m 0`` is no limit at all.
+
+    The snapshot waits up to 1800 s, its delete 300 s, every other call 30 s.
+    """
+    done = _run(host, "snapshot", env={"T": stray})
+    assert done.returncode == 0, done.stderr
+    assert _qdrant_limits(host) == [
+        ("GET /collections", "30"),
+        ("POST /collections/codebase_a/points/count", "30"),
+        ("POST /collections/context_a/points/count", "30"),
+        ("POST /snapshots", "1800"),
+        (f"DELETE /snapshots/{SNAPSHOT}", "300"),
+    ]
+
+
+@pytest.mark.parametrize("stray", ["0", "soon", "5"])
+def test_check_keeps_its_own_limits_whatever_t_says(host: Path, stray: str) -> None:
+    done = _check(host, env={"T": stray})
+    assert done.returncode == 0, done.stderr
+    limits = _qdrant_limits(host)
+    assert [c for c, _ in limits] == [
+        "GET /collections",
+        "POST /collections/codebase_a/points/count",
+        "POST /collections/context_a/points/count",
+        "GET /collections/codebase_a",
+        "POST /collections/codebase_a/points/query",
+    ]
+    assert {t for _, t in limits} == {"30"}
