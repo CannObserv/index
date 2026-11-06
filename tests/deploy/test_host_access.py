@@ -45,8 +45,9 @@ def test_this_session_is_not_in_group_docker() -> None:
 
 def test_exedev_reads_qdrants_journal() -> None:
     """``index-inflight.sh`` reads ``qdrant.service``'s journal as the knob
-    user. Without access, ``journalctl`` exits 1 and the gate fails closed on
-    every window."""
+    user. Without ``adm``, ``exedev``'s ``journalctl`` reads only its own user
+    journal: it exits 0 and prints nothing, so the exit status alone proves
+    nothing, and the gate fails closed on every window."""
     done = subprocess.run(
         ["journalctl", "-u", "qdrant.service", "-n", "1", "-o", "cat", "--no-pager"],
         capture_output=True,
