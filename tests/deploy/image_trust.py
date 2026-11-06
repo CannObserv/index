@@ -22,8 +22,22 @@ def trusted_cns(image: str) -> list[str]:
     only, where a missing image is a failure, not a skip."""
     if socket.gethostname() != HOST:
         pytest.skip(f"not {HOST}")
+    # An operator docker call, so through sudo (D20): exedev isn't in group
+    # docker. -n fails rather than prompting.
     pem = subprocess.run(
-        ["docker", "run", "--rm", "--network", "none", "--entrypoint", "/bin/cat", image, BUNDLE],
+        [
+            "sudo",
+            "-n",
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--entrypoint",
+            "/bin/cat",
+            image,
+            BUNDLE,
+        ],
         capture_output=True,
         text=True,
         check=True,
