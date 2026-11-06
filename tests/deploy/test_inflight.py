@@ -249,9 +249,10 @@ def test_counts_every_write_among_other_lines(docker: Path) -> None:
 
 
 def test_fails_closed_when_journalctl_fails(docker: Path) -> None:
-    """Without group ``adm``, ``journalctl`` prints this and exits 1 (measured
-    as ``nobody``, 2026-11-06). No count is printed, so the gate can't read an
-    error as zero."""
+    """A user with no journal it may read at all gets this, and exit 1
+    (measured as ``nobody``, 2026-11-06). ``exedev`` without ``adm`` still
+    has its own: that case is ``test_an_empty_journal_names_the_group``. No
+    count is printed, so the gate can't read an error as zero."""
     done = _run(docker, ["No journal files were opened due to insufficient permissions."], rc=1)
     assert done.returncode != 0
     assert done.stdout == ""
