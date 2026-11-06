@@ -33,13 +33,19 @@ marker="index-inflight/$$.$(date +%s%N)"
 curl -s -o /dev/null --max-time 5 -A "$marker" "$QURL/collections" \
   || unknown "qdrant didn't answer the marker request"
 
+# Without group adm, exedev still has its own user journal: journalctl then
+# exits 0 and prints nothing at all, which the marker fails closed on.
+seen=
 for _ in 1 2 3 4 5; do
   log="$(journalctl -u qdrant.service --since -5min -o cat --no-pager)" \
     || unknown "journalctl -u qdrant.service failed"
+  [ -n "$log" ] && seen=1
   grep -qF "\"$marker\"" <<<"$log" && break
   log=
   sleep 0.2
 done
+[ -n "$seen" ] \
+  || unknown "the journal shows no lines from qdrant.service (is $(id -un) in group adm? is Qdrant logging above INFO?)"
 [ -n "$log" ] || unknown "qdrant's access log doesn't show the marker request"
 
 # journald drops a unit's lines past its rate limit (10000 per 30s, scaled up

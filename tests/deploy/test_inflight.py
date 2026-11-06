@@ -258,6 +258,17 @@ def test_fails_closed_when_journalctl_fails(docker: Path) -> None:
     assert "unknown" in done.stderr
 
 
+def test_an_empty_journal_names_the_group(docker: Path) -> None:
+    """Without group ``adm``, ``exedev`` still has its own user journal, so
+    ``journalctl -u qdrant.service`` exits 0 and prints nothing (measured
+    2026-11-06, ``setpriv --clear-groups``). That fails closed on the marker,
+    and the message must point at the group, not at Qdrant's log level."""
+    done = _run(docker, [], logs=False)
+    assert done.returncode != 0
+    assert done.stdout == ""
+    assert "group adm" in done.stderr
+
+
 def test_fails_closed_without_journalctl(tmp_path: Path) -> None:
     env = {**os.environ, "PATH": str(tmp_path)}
     done = subprocess.run(["/usr/bin/bash", str(SCRIPT)], capture_output=True, text=True, env=env)
@@ -301,7 +312,8 @@ def test_its_own_marker_request_is_not_counted(docker: Path) -> None:
 def test_fails_closed_when_qdrant_logs_no_requests(docker: Path) -> None:
     """Qdrant above INFO: no write is logged, and neither is the marker. An
     empty window then means nothing, and the gate must not read it as 0."""
-    done = _run(docker, [], logs=False)
+    warn = "2026-10-08T16:00:00Z  WARN qdrant: a line above INFO"
+    done = _run(docker, [warn], logs=False)
     assert done.returncode != 0
     assert done.stdout == ""
     assert "access log" in done.stderr
