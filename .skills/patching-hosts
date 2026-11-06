@@ -36,6 +36,11 @@ inflight /usr/local/bin/index-inflight.sh
 origin pkgs.tailscale.com follow
 hold tailscale tailscale
 
+# Node for this repo's own SocratiCode client (D20, #18); no store unit runs
+# it. Scoped by deploy/apt-preferences.d/nodesource: the site at 100, nodejs
+# at 600. A nodejs upgrade restarts nothing the knob declares.
+origin deb.nodesource.com follow
+
 # Qdrant's recovery point, taken by recovery-point.sh and checked after a
 # restart (gregoryfoster/skills#367). The URL is the name: the certificate
 # covers only it (D14). The key file is root-only.

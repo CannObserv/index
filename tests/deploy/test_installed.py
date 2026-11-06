@@ -51,6 +51,11 @@ INSTALL: dict[str, tuple[Path, int] | None] = {
     "qdrant.service": (UNITS / "qdrant.service", 0o644),
     "needrestart.conf.d/index.conf": (Path("/etc/needrestart/conf.d/index.conf"), 0o644),
     "apt-preferences.d/tailscale": (Path("/etc/apt/preferences.d/tailscale"), 0o644),
+    # Installed with the NodeSource key by scripts/nodesource.sh, which holds the
+    # host to them (`check`, test_nodesource.py on co-index): apt can't use the
+    # source before the keyring exists (#18).
+    "apt-preferences.d/nodesource": None,
+    "apt-sources.list.d/nodesource.sources": None,
 }
 INSTALLED = {src: dest for src, dest in INSTALL.items() if dest is not None}
 LOADED_UNITS = [src for src in INSTALLED if src.endswith((".service", ".timer"))]

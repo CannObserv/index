@@ -160,6 +160,7 @@ again in ten minutes, a missed renewal window closes for good.
 | `index-inflight.sh` | the patching knob's `inflight` (#9): prints how many writes Qdrant served in the last 5 min, so a step waits out a client's index run, this host's own included (D20). It reads `qdrant.service`'s journal, which `exedev` reads through group `adm`, never `docker logs` (#18). It first logs one unauthenticated request with a unique user agent, and exits 1, printing no count, unless that marker shows in the log: a silent log isn't an idle one. It also exits 1 when journald reports dropping the unit's lines in the window. |
 | `qdrant-recovery.sh` | Qdrant's recovery point and check for the steps `patching-hosts` doesn't run: a Docker restart, a Qdrant upgrade, an engine change (#9, #30). A patching run takes no snapshot here: the knob's `datastore qdrant` line has `recovery-point.sh` take it. `sudo qdrant-recovery.sh snapshot` writes the point counts and a full snapshot, copied **out of the container** (`--rm` discards its snapshots directory), mode 600, with the sha256 for the owner's off-node copy. `sudo qdrant-recovery.sh check <counts file>` after a step that stopped Qdrant: fails on a collection gone or emptied, or a real query with no hits. A patching run's counts file, from its recovery point, works too, and adds the real query the skill's check doesn't run. The query's embed waits `EMBED_T` seconds (60), up to 3 tries on a timeout only: Ollama serialises embeds, so a client's index run can queue it. Set it after `sudo` (`sudo EMBED_T=180 qdrant-recovery.sh check …`): `EMBED_T=180 sudo …` loses it to sudo's `env_reset`, and the check runs at 60 s. |
 | `apt-preferences.d/tailscale` | scopes `pkgs.tailscale.com`, which the knob follows: the site at 100, below Ubuntu, and `tailscale` and its keyring at 600 (#9). |
+| `apt-sources.list.d/nodesource.sources`, `apt-preferences.d/nodesource` | Node 26 from NodeSource, for this repo's own SocratiCode client and nothing else (D20, #18): the `node_26.x` source, and pins that hold the site at 100 and `nodejs` at 600. The knob follows `deb.nodesource.com`. Installed and checked by `scripts/nodesource.sh`, never by the lines below: apt can't use the source before the key is in place. See [Node](#node). |
 
 **The disk GC is not in `deploy/`** (#16). It is Provisioner's cohort GC and headroom sensor, pulled and installed by the vendored `maintaining-host-disk` skill, which also updates and removes it. Never edit the installed copy. Its units are `cannobserv-disk-gc.timer` (daily) and `cannobserv-disk-headroom.timer` (every 10 min), and its journald drop-in caps the journal at 512M. This host's own files are in `/etc/cannobserv/disk-gc/`:
 - `disk-gc.conf`: the template's tiers plus `worktrees` and `docker`. `docker` is on because `ollama-slim` is built here; it never removes a container, a volume or a tagged image. The lines are 85/80, and patching-hosts reads them as its floor.
@@ -243,6 +244,36 @@ or owner, or is not loaded, and on any unit with `[Install]` that is not enabled
 and running, and prints the command that fixes it. Everywhere, CI included, it
 fails on a new file in `deploy/` until the file is mapped, and on install lines
 above that no longer install exactly what is mapped.
+
+## Node
+
+Node is client-side only: SocratiCode for this repo, on this host (D20). No
+store unit or deploy script runs `node`, `npx` or `npm`, and
+`test_nodesource.py` fails on any that does. The line is pinned in
+`deploy/apt-sources.list.d/nodesource.sources` (`node_26.x`); moving it is a
+deliberate edit, with `EXPECTED_MAJOR` in the test.
+
+**`exedev` is out of group `docker` first** (D20). The install refuses
+otherwise. After `sudo gpasswd -d exedev docker`, restart the VS Code server:
+an attached session keeps the group until then. Check `id -nG`.
+
+```bash
+sudo bash scripts/nodesource.sh install   # refuses a key that isn't NodeSource's
+bash scripts/nodesource.sh check          # key, source, pins, candidate, /usr/bin/node
+```
+
+The key's fingerprint is `6F71 F525 2828 41EE DAF8  51B4 2F59 B5F9 9B1B E0B4`
+(CannObserv/watcher#296, and fetched again on 2026-11-06). Updates come in
+the knob's maintenance lane, as `origin deb.nodesource.com follow`. Out of
+cycle, re-run `install`. To remove it:
+
+```bash
+sudo apt-get purge nodejs
+sudo rm /etc/apt/sources.list.d/nodesource.sources /etc/apt/preferences.d/nodesource /etc/apt/keyrings/nodesource.gpg
+sudo apt-get update
+```
+
+Removing it also means removing the knob's `origin` line, in the same change.
 
 ## Engine change
 

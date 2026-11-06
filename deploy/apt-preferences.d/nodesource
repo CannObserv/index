@@ -1,0 +1,14 @@
+# #18 (D20): installed as /etc/apt/preferences.d/nodesource by
+# deploy/nodesource.sh. The patching knob follows deb.nodesource.com in the
+# maintenance lane, and the site serves nsolid too, so it is scoped here
+# (patching-hosts policy.md, "Two lanes"): everything from the site sits
+# below Ubuntu's 500, except nodejs, which never falls back to universe's 18.
+#
+# Pinned by site: the Release file's Origin is aptly's generic ". nodistro".
+Package: *
+Pin: origin deb.nodesource.com
+Pin-Priority: 100
+
+Package: nodejs
+Pin: origin deb.nodesource.com
+Pin-Priority: 600

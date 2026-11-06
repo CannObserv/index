@@ -1,0 +1,8 @@
+# #18 (D20): installed as /etc/apt/sources.list.d/nodesource.sources by
+# deploy/nodesource.sh. The major line is pinned; moving it is a deliberate
+# edit, with EXPECTED_MAJOR in tests/deploy/test_nodesource.py.
+Types: deb
+URIs: https://deb.nodesource.com/node_26.x
+Suites: nodistro
+Components: main
+Signed-By: /etc/apt/keyrings/nodesource.gpg

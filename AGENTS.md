@@ -33,10 +33,11 @@ uv run pre-commit install   # once per clone
 
 | Path | Role |
 |---|---|
-| `deploy/` | Everything installed on `co-index`: `qdrant.service`/`qdrant-run.sh`, `ollama.service`/`ollama-run.sh`/`ollama-slim/`, `qdrant-cert-renew.*` (D14), `index-checkin.*` (D10/D16) with `engine-fingerprint.*` (D19), `tailnet-bind.sh` (D3), `setup.sh.template` (first boot); for patching (#9), `index-inflight.sh`, `qdrant-recovery.sh`, `apt-preferences.d/tailscale` |
-| `.skills/patching-hosts` | The `patching-hosts` knob: windows, quiet range, services, health, in-flight gate, Tailscale origin. `datastore qdrant`: `recovery-point.sh` takes Qdrant's snapshot. `qdrant-recovery.sh` is for the steps the skill doesn't run, plus `check` after a step |
+| `deploy/` | Everything installed on `co-index`: `qdrant.service`/`qdrant-run.sh`, `ollama.service`/`ollama-run.sh`/`ollama-slim/`, `qdrant-cert-renew.*` (D14), `index-checkin.*` (D10/D16) with `engine-fingerprint.*` (D19), `tailnet-bind.sh` (D3), `setup.sh.template` (first boot); for patching (#9), `index-inflight.sh`, `qdrant-recovery.sh`, `apt-preferences.d/tailscale`; Node's apt source and pins (D20) |
+| `.skills/patching-hosts` | The `patching-hosts` knob: windows, quiet range, services, health, in-flight gate, Tailscale and NodeSource origins. `datastore qdrant`: `recovery-point.sh` takes Qdrant's snapshot. `qdrant-recovery.sh` is for the steps the skill doesn't run, plus `check` after a step |
 | `scripts/install_qdrant_key.sh` | Installs the store's single API key into a *client* repo's `.claude/settings.local.json`. Key on stdin only, atomic 0600 write, refuses a target git would commit |
 | `scripts/reembed.py` | Re-embeds the store from its own payloads on an engine change (D19, #11). `--dry-run` is the gate and the drift check; `--apply` rewrites `dense` only. Procedure: deploy/README.md, "Engine change" |
+| `scripts/nodesource.sh` | Installs Node from NodeSource (`install`, root, fingerprint-checked key) and checks the host against `deploy/` (`check`). Refuses while `exedev` is in group `docker` (D20). Run from the checkout |
 | `scripts/pre-ship.sh` | `shipping-work`'s gate (#3): CI's steps, in CI's order, stops at the first failure. Dev-only; clients never run it |
 | `tests/deploy/` | Behaviour and drift tests for the above |
 | `.github/dependabot.yml` | `github-actions` + `uv` (dev group), weekly, 7-day cooldown (#23). PRs land by fast-forward from a detached worktree, never via the deploy checkout's `main`: [docs/dependabot.md](docs/dependabot.md) |
@@ -56,6 +57,7 @@ exe.dev VM `co-index` (`pdx`, 2 vCPU / 8 GB / 30 GB, proxy `private`), tailnet n
 | `index-checkin.timer` | every 10 min → co-status's dead-man's timer (CannObserv/status) | a missed check-in alerts there |
 | `cannobserv-disk-gc.timer` | the cohort disk GC, daily 05:15 UTC (#16). Provisioner's, installed by the `maintaining-host-disk` skill, not from `deploy/` | `sudo journalctl -u cannobserv-disk-gc` |
 | `cannobserv-disk-headroom.timer` | every 10 min, `/` at 85/80 → `co-index-disk-headroom` (CannObserv/status#72) | a missed check-in alerts there |
+| Node 26 (`nodejs`) | not a unit: NodeSource apt, for this repo's own SocratiCode client only. No unit or deploy script runs it (D20) | `bash scripts/nodesource.sh check` |
 
 `qdrant.service` and `ollama.service` are `Requires=docker.service`: **restarting Docker restarts both.**
 
