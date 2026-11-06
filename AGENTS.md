@@ -12,6 +12,29 @@ Moved out of CannObserv/notifier with history (notifier#90, #1). **A bare `#N` i
 
 Design record, with every decision (D0–D20): [docs/plans/2026-09-11-shared-qdrant-vm-design.md](docs/plans/2026-09-11-shared-qdrant-vm-design.md). Host runbook: [deploy/README.md](deploy/README.md).
 
+<!-- BEGIN socraticode-policy -->
+## Code Exploration Policy
+
+SocratiCode is the preferred semantic-search tool here once indexed (manifest
+`.socraticodecontextartifacts.json`). Its MCP tools are **deferred** — schemas
+load only after the `ToolSearch` prefetch that
+`.claude/hooks/socraticode-reminder.sh` prints each session.
+
+**Negative rule.** Use SocratiCode MCP tools first for semantic questions
+("where is X", "how does Y work", "what depends on Z"). Reach for `grep`/`rg`
+only on exact strings (error messages, log lines, known symbols). Reserve the
+Explore subagent for path-pattern walks (`*.sh` under `deploy/`), not
+semantic search.
+
+| Goal | Tool |
+|------|------|
+| Where is X defined / how does Y work / what touches Z | `codebase_search` |
+| Exact string or regex (errors, log lines, known symbols) | `grep` / `rg` |
+| Imports/dependents of a file · blast radius of a change | `codebase_graph_query` / `codebase_impact` |
+
+Full tool table, prefetch hook, per-tool guidance: [`docs/SOCRATICODE.md`](docs/SOCRATICODE.md).
+<!-- END socraticode-policy -->
+
 ## Development Methodology
 
 TDD required. Red → Green → Refactor. No production code without a failing test first.
@@ -40,6 +63,7 @@ uv run pre-commit install   # once per clone
 | `scripts/nodesource.sh` | Installs Node from NodeSource (`install`, root, fingerprint-checked key) and checks the host against `deploy/` (`check`). Refuses while `exedev` is in group `docker` (D20). Run from the checkout |
 | `scripts/pre-ship.sh` | `shipping-work`'s gate (#3): CI's steps, in CI's order, stops at the first failure. Dev-only; clients never run it |
 | `tests/deploy/` | Behaviour and drift tests for the above |
+| `.socraticode.json`, `.socraticodeignore`, `.socraticodecontextartifacts.json` | This repo's own SocratiCode client (D20, #18): `projectId: index`, no linked projects, the store's `env` block in `.claude/settings.json`, pinned `socraticode@1.16.1`. Guarded by `tests/ci/test_socraticode_config.py`. Detail: [docs/SOCRATICODE.md](docs/SOCRATICODE.md) |
 | `.github/dependabot.yml` | `github-actions` + `uv` (dev group), weekly, 7-day cooldown (#23). PRs land by fast-forward from a detached worktree, never via the deploy checkout's `main`: [docs/dependabot.md](docs/dependabot.md) |
 | `tests/ci/` | Guards for the Dependabot config, and for where CI and clones get uv (`test_uv_source.py`). `test_dependabot.py` is the `adopting-dependabot` asset: edit its ADAPT block only |
 

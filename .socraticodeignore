@@ -1,0 +1,9 @@
+# .socraticodeignore — semantic-index exclusions (layered on defaults + .gitignore).
+# #18's list: vendored skill trees and nested checkouts. The patching knob under
+# .skills/ is first-party, and stays searchable as a context artifact.
+skills-vendor/
+skills/
+.claude/skills/
+.skills/
+.worktrees/
+.claude/worktrees/

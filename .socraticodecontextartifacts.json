@@ -1,0 +1,39 @@
+{
+  "artifacts": [
+    {
+      "name": "agent-guidelines",
+      "path": "./AGENTS.md",
+      "description": "Agent working agreements, conventions, layout map, infrastructure table"
+    },
+    {
+      "name": "socraticode-doc",
+      "path": "./docs/SOCRATICODE.md",
+      "description": "SocratiCode tool table, prefetch, graph health and index scope for this repo"
+    },
+    {
+      "name": "design-plans",
+      "path": "./docs/plans/",
+      "description": "The shared-store design record (decisions D0-D20) and dated implementation plans (directory, indexed recursively)"
+    },
+    {
+      "name": "runbook",
+      "path": "./deploy/README.md",
+      "description": "co-index host runbook: provisioning, TLS, installing a change, Node, engine change, Qdrant upgrade"
+    },
+    {
+      "name": "key-install",
+      "path": "./docs/installing-the-key.md",
+      "description": "How a client installs and rotates the store's single Qdrant API key"
+    },
+    {
+      "name": "dependabot",
+      "path": "./docs/dependabot.md",
+      "description": "Dependabot config and how its PRs land"
+    },
+    {
+      "name": "patching-knob",
+      "path": "./.skills/patching-hosts",
+      "description": "The patching-hosts knob: windows, quiet range, services, health, in-flight gate, origins, datastore, exceptions"
+    }
+  ]
+}
