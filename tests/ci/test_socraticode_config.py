@@ -217,6 +217,14 @@ def test_the_session_launch_is_pinned(client_env: dict[str, str]) -> None:
     assert client_env.get("SOCRATICODE_SPEC") == SOCRATICODE_SPEC
 
 
+def test_the_detail_doc_names_the_pin() -> None:
+    """The one prose copy of the pin, held to the constant so a re-pin can't leave
+    it behind. AGENTS.md names no version: it's paid for on every invocation."""
+    assert SOCRATICODE_SPEC in (ROOT / "docs" / "SOCRATICODE.md").read_text()
+    agents = (ROOT / "AGENTS.md").read_text()
+    assert not re.search(r"socraticode@\d", agents)
+
+
 def test_the_session_and_driver_pins_agree(client_env: dict[str, str]) -> None:
     """Two builds writing one store is what a half re-pin makes. VM-local."""
     text = _read_if_present(DRIVER_PIN / "package.json")
