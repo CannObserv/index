@@ -27,7 +27,8 @@ owner socraticode/ollama-slim self
 health curl -sf --max-time 5 https://index.taild0fb76.ts.net:6333/readyz
 health curl -sf --max-time 5 http://index.taild0fb76.ts.net:11434/api/tags
 
-# Qdrant writes in the last 5 min; a client's index run shows nowhere else (D11).
+# Qdrant writes in the last 5 min; a client's index run, this host's own for
+# `index` included (D20), shows nowhere else (D11).
 inflight /usr/local/bin/index-inflight.sh
 
 # Scoped by deploy/apt-preferences.d/tailscale. tailscaled's restart is its own
