@@ -23,14 +23,21 @@ load only after the `ToolSearch` prefetch that
 **Negative rule.** Use SocratiCode MCP tools first for semantic questions
 ("where is X", "how does Y work", "what depends on Z"). Reach for `grep`/`rg`
 only on exact strings (error messages, log lines, known symbols). Reserve the
-Explore subagent for path-pattern walks (`*.sh` under `deploy/`), not
-semantic search.
+Explore subagent for path-pattern walks, not semantic search.
+
+> **The dependency graph here is LOW-YIELD** — 2 edges across 34
+> files, 69.7% unresolved (2026-11-07). `codebase_graph_query`,
+> `codebase_impact` and `codebase_flow` answer empty rather than erroring, so
+> **treat empty graph output as tool failure, not as absence** — "No dependency
+> information found" means the resolver failed, never that nothing depends on
+> the file. Use `rg -n 'from <module> import|import <module>|<script>\.sh'` instead:
+> most of this repo is shell, which calls scripts by name.
 
 | Goal | Tool |
 |------|------|
 | Where is X defined / how does Y work / what touches Z | `codebase_search` |
 | Exact string or regex (errors, log lines, known symbols) | `grep` / `rg` |
-| Imports/dependents of a file · blast radius of a change | `codebase_graph_query` / `codebase_impact` |
+| Imports/dependents of a file · blast radius of a change | `grep` / `rg` — graph low-yield |
 
 Full tool table, prefetch hook, per-tool guidance: [`docs/SOCRATICODE.md`](docs/SOCRATICODE.md).
 <!-- END socraticode-policy -->

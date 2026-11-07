@@ -161,3 +161,14 @@ apply it. Left in, vendored trees outrank first-party code in `codebase_search`.
   run through the ignore chain.
 - **Worktree sessions carry no key** (`.claude/settings.local.json` is the
   deploy checkout's): index and search from `/home/exedev/index`.
+- **Graph yield is LOW, and that's expected** (first index, 2026-11-07,
+  `socraticode@1.16.1`). 2 of 141 captured imports resolved (1.4%): 2 edges
+  across 34 files. Most of the repo is shell, and the Python tests import the
+  standard library, not each other. The one first-party import,
+  `tests/deploy/test_qdrant_run.py` → `image_trust.py`, does resolve. So
+  AGENTS.md carries the degraded policy (variant B): dependency questions go
+  to `rg`.
+- **First index:** about 7 minutes (04:33–04:40Z), 423 chunks, 7 artifacts
+  (81 chunks). The `.claude/hooks/` symlinks into `skills-vendor/` aren't
+  indexed (the server doesn't follow them), so #18's ignore list needs nothing
+  more.
