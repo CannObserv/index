@@ -72,13 +72,15 @@ def test_no_exedev_process_holds_group_docker() -> None:
     )
 
 
-def test_exedev_reads_qdrants_journal() -> None:
-    """``index-inflight.sh`` reads ``qdrant.service``'s journal as the knob
-    user. Without ``adm``, ``exedev``'s ``journalctl`` reads only its own user
-    journal: it exits 0 and prints nothing, so the exit status alone proves
-    nothing, and the gate fails closed on every window."""
+@pytest.mark.parametrize("unit", ["qdrant.service", "ollama.service"])
+def test_exedev_reads_the_stores_journals(unit: str) -> None:
+    """``index-inflight.sh`` reads ``qdrant.service``'s and, since #41,
+    ``ollama.service``'s journal as the knob user. Without ``adm``,
+    ``exedev``'s ``journalctl`` reads only its own user journal: it exits 0
+    and prints nothing, so the exit status alone proves nothing, and the gate
+    fails closed on every window."""
     done = subprocess.run(
-        ["journalctl", "-u", "qdrant.service", "-n", "1", "-o", "cat", "--no-pager"],
+        ["journalctl", "-u", unit, "-n", "1", "-o", "cat", "--no-pager"],
         capture_output=True,
         text=True,
     )
