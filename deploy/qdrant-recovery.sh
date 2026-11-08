@@ -69,7 +69,7 @@ total() { awk '{ s += $2 } END { print s + 0 }'; }
 # retried: it's a queue, not a fault. curl reads --max-time 0 as no limit, so
 # check refuses one first.
 embed() {
-  local t=$1 tries=$2 i out rc
+  local t=$1 tries=$2 i out rc said
   for ((i = 1; i <= tries; i++)); do
     rc=0
     out=$(curl -sS --fail-with-body --max-time "$t" "$OURL/api/embed" \
@@ -78,8 +78,9 @@ embed() {
     [ "$rc" -eq 28 ] || break
     echo "qdrant-recovery: embed: no answer in $t s (try $i of $tries)" >&2
   done
+  [ "$tries" -eq 1 ] && said="1 try" || said="$tries tries"
   [ "$rc" -ne 28 ] \
-    || die "embed: no answer in $t s, $tries tries: a client's index run may be ahead of it in Ollama's queue; retry later, or longer: sudo EMBED_T=<seconds> qdrant-recovery.sh check <counts file>"
+    || die "embed: no answer in $t s, $said: a client's index run may be ahead of it in Ollama's queue; retry later, or longer: sudo EMBED_T=<seconds> qdrant-recovery.sh check <counts file>"
   [ "$rc" -eq 0 ] || die "embed failed (curl exit $rc): $out"
   json 'json.dumps(d["embeddings"][0])' <<<"$out" 2>/dev/null \
     || die "embed answered no embedding: $out"

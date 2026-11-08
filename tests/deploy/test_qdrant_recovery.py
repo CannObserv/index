@@ -529,7 +529,7 @@ def test_query_tries_the_embed_once(host: Path) -> None:
     done = _query(host, counts=CODE, embed_rc=28)
     assert done.returncode != 0
     assert len(_embeds(host)) == 1
-    assert "no answer in 30 s" in done.stderr
+    assert "no answer in 30 s, 1 try:" in done.stderr
     assert "qdrant-recovery.sh check" in done.stderr
     assert "/points/query" not in (host / "curl.log").read_text()
 
