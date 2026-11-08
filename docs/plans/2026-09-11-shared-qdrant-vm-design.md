@@ -338,7 +338,9 @@ is ever built.
    only changed files. The trigger to revisit is *incremental* runs queueing.
    Since D20 one indexer runs on the store's own host. It starts when
    `index-inflight.sh` reads 0, and that probe is five minutes of evidence,
-   not a lock: another client can start mid-run.
+   not a lock: another client can start mid-run. Since #41 it counts
+   Ollama's batches too: Qdrant's writes alone read 0 through a run that
+   embedded for over five minutes between upserts (2026-11-08).
 6. **A fifth VM's own install decays the same way this one did.** D10 is the
    answer, and it is the thing CannObserv/notifier#57 says was missing the first time.
 7. **A session on `co-index` falls back to managed mode.** Without the `env`
