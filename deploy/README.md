@@ -343,7 +343,10 @@ inside a knob window:
 
 2. **No drift** (every collection `PASS`): set the tag in `ollama-run.sh`,
    install, and restart `ollama.service`. Then recapture the fingerprint (its
-   row in Contents), commit, and install it. You're done.
+   row in Contents), commit, and install it, and run `index-inflight.sh`: it
+   must print a number. `format` means the new Ollama logs its requests or
+   its inputs differently, and the gate refuses every patch step until it is
+   measured again (#41). You're done.
 3. **Drift:** the store is re-embedded from its own payloads, with no client
    involved:
    - **A day ahead,** file an issue on each cohort repo with its
@@ -356,7 +359,8 @@ inside a knob window:
      `--apply` on it.
    - **In the window:** check `index-inflight.sh` reads 0, then run `sudo
      qdrant-recovery.sh snapshot`. Keep the old image's tag. Set the new tag
-     in `ollama-run.sh`, install, restart `ollama.service`, then run
+     in `ollama-run.sh`, install, restart `ollama.service`, check
+     `index-inflight.sh` prints a number, not `format` (as in 2), then run
      `reembed.py --apply --gate <gate.json>`.
    - **Verify:** `reembed.py --dry-run --sample 24` passes on the new engine,
      and `qdrant-recovery.sh check <counts>` passes. Recapture the
