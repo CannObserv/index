@@ -551,3 +551,14 @@ def test_query_lists_and_sizes_within_10_s_all_told(host: Path) -> None:
     assert limits[:2] == [5, 5]
     assert all(t < 5 for t in limits[2:])
     assert _embeds(host) == []
+
+
+def test_the_knob_runs_the_query_as_its_recovery_line() -> None:
+    """The installed path, no sudo: knob commands never run as root (knob.md:69).
+
+    Lands only once the read-only key is live: a line that can't pass would
+    stop the next patching run (#40).
+    """
+    knob = (REPO_ROOT / ".skills" / "patching-hosts").read_text().splitlines()
+    lines = [ln.split(None, 1)[1] for ln in knob if ln.startswith("recovery ")]
+    assert lines == ["/usr/local/bin/qdrant-recovery.sh query"]

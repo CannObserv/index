@@ -46,6 +46,10 @@ origin deb.nodesource.com follow
 # restart (gregoryfoster/skills#367). The URL is the name: the certificate
 # covers only it (D14). The key file is root-only.
 datastore qdrant qdrant.service qdrant https://index.taild0fb76.ts.net:6333 /etc/socraticode/qdrant.key
+# A real query after a restart and after the reboot, as the knob user: the
+# read-only key, group qdrant-ro (D22, #40). 45 s of limits, under the 60 s a
+# recovery line gets. The skill's own check compares counts only.
+recovery /usr/local/bin/qdrant-recovery.sh query
 # The probe wants each service After= each datastore. Ollama never calls
 # Qdrant: clients call each directly, so its start order doesn't matter.
 exception ordering:ollama.service 2027-05-03 Ollama doesn't use Qdrant; clients call each directly
