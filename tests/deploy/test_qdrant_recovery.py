@@ -413,10 +413,10 @@ def test_check_keeps_its_own_limits_whatever_t_says(host: Path, stray: str) -> N
 
 # --- query (#40): the knob's recovery line --------------------------------
 #
-# apply.sh runs it as the knob user, never root, after a step that restarted
-# Qdrant and after the reboot, under `timeout -k 10 60` (knob.md:69,
-# _probe-lib.sh:174-184), with its output to /dev/null: the exit code is all a
-# run records. So it reads the read-only key, takes no counts file, sizes the
+# It runs as the knob user, never root, under `timeout -k 10 60` (knob.md:69,
+# _probe-lib.sh:174-184), with its output to /dev/null: apply.sh after a step
+# that restarted Qdrant, and probe.sh --post-boot after the reboot. The exit
+# code is all a run records. So it reads the read-only key, takes no counts file, sizes the
 # code collections from their info rather than exact counts (55.6 s for all
 # of them, #39), and holds every limit to its own budget.
 

@@ -13,9 +13,9 @@
 #   sudo qdrant-recovery.sh check BEFORE    counts against BEFORE, and a query
 #        qdrant-recovery.sh query           the query alone, read-only key
 #
-# `query` is the knob's recovery line (#40): apply.sh runs it as the knob
-# user, never root, after a step that restarted Qdrant and after the reboot,
-# under a 60 s limit, and records only its exit code. So it reads the
+# `query` is the knob's recovery line (#40), run as the knob user, never root,
+# under a 60 s limit, with only its exit code recorded: by apply.sh after a
+# step that restarted Qdrant, and by probe.sh --post-boot. So it reads the
 # read-only key (group qdrant-ro, D22), takes no counts file (the skill
 # checks counts), and holds itself to 45 s of limits: the list and each code
 # collection's info share 10 s, then one embed of 30 s, then a 5 s search.
