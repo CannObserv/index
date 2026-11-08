@@ -36,6 +36,7 @@ import re
 import stat
 import subprocess
 import tarfile
+import time
 from pathlib import Path
 
 import pytest
@@ -536,14 +537,17 @@ def test_query_tries_the_embed_once(host: Path) -> None:
 def test_query_lists_and_sizes_within_10_s_all_told(host: Path) -> None:
     """The code collections grow with the cohort: their reads share one deadline.
 
-    Each info call answers in 4 s. The first two get 5 s each; the third gets
-    what's left of 10 s and times out, so the mode fails with no embed.
+    Each info call answers in 4 s. The first two get 5 s each. The third gets
+    what's left of 10 s and times out, or, on a slow runner, never starts.
+    Either way the mode fails by the deadline, with no embed.
     """
     counts = {"codebase_a": 1, "codebase_b": 2, "codebase_c": 3}
     delays = {f"/collections/{c}": 4 for c in counts}
+    start = time.monotonic()
     done = _query(host, counts=counts, qdrant_delays=delays)
+    assert time.monotonic() - start < 12
     assert done.returncode != 0
     limits = [int(t) for c, t in _qdrant_limits(host) if c.startswith("GET /collections/")]
     assert limits[:2] == [5, 5]
-    assert len(limits) == 3 and limits[2] < 5
+    assert all(t < 5 for t in limits[2:])
     assert _embeds(host) == []
