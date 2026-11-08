@@ -11,12 +11,20 @@
 #
 #   sudo qdrant-recovery.sh snapshot        counts, then a full snapshot
 #   sudo qdrant-recovery.sh check BEFORE    counts against BEFORE, and a query
+#        qdrant-recovery.sh query           the query alone, read-only key
+#
+# `query` is the knob's recovery line (#40): apply.sh runs it as the knob
+# user, never root, after a step that restarted Qdrant and after the reboot,
+# under a 60 s limit, and records only its exit code. So it reads the
+# read-only key (group qdrant-ro, D22), takes no counts file (the skill
+# checks counts), and holds itself to 45 s of limits: the list and each code
+# collection's info share 10 s, then one embed of 30 s, then a 5 s search.
 #
 # The query's embed waits EMBED_T seconds (60), up to 3 tries: Ollama
 # serialises embeds, so a client's index run can queue it behind a batch. Set
 # it after sudo (sudo EMBED_T=180 ...): sudo drops it from the caller's env.
 #
-# Root, because the API key is 0600 root. It reaches curl as a header file
+# snapshot and check are root, because the API key is 0600 root. It reaches curl as a header file
 # from a process substitution, never as an argument: /proc has no hidepid here.
 set -euo pipefail
 
@@ -24,13 +32,14 @@ set -euo pipefail
 QURL="https://index.taild0fb76.ts.net:6333"
 OURL="http://index.taild0fb76.ts.net:11434"
 KEY_FILE=/etc/socraticode/qdrant.key
+RO_KEY_FILE=/etc/socraticode/qdrant-ro.key
 OUT=/var/backups
 
 die() {
   echo "qdrant-recovery: $*" >&2
   exit 1
 }
-usage() { die "usage: qdrant-recovery.sh snapshot | check BEFORE-COUNTS"; }
+usage() { die "usage: qdrant-recovery.sh snapshot | check BEFORE-COUNTS | query"; }
 need_key() { [ -r "$KEY_FILE" ] || die "can't read $KEY_FILE: run it through sudo"; }
 
 key() { printf 'api-key: %s\n' "$(cat "$KEY_FILE")"; }
@@ -56,24 +65,41 @@ counts() {
 
 total() { awk '{ s += $2 } END { print s + 0 }'; }
 
-# The query's embedding, as JSON. Only a timeout is retried: it's a queue, not
-# a fault. curl reads --max-time 0 as no limit, so check refuses one first.
+# embed LIMIT TRIES: the query's embedding, as JSON. Only a timeout is
+# retried: it's a queue, not a fault. curl reads --max-time 0 as no limit, so
+# check refuses one first.
 embed() {
-  local i out rc
-  for i in 1 2 3; do
+  local t=$1 tries=$2 i out rc
+  for ((i = 1; i <= tries; i++)); do
     rc=0
-    out=$(curl -sS --fail-with-body --max-time "$EMBED_T" "$OURL/api/embed" \
+    out=$(curl -sS --fail-with-body --max-time "$t" "$OURL/api/embed" \
       -d '{"model": "nomic-embed-text", "input": "search_query: how is the API key installed"}') \
       || rc=$?
     [ "$rc" -eq 28 ] || break
-    echo "qdrant-recovery: embed: no answer in $EMBED_T s (try $i of 3)" >&2
+    echo "qdrant-recovery: embed: no answer in $t s (try $i of $tries)" >&2
   done
   [ "$rc" -ne 28 ] \
-    || die "embed: no answer in $EMBED_T s, 3 tries: a client's index run may be ahead of it in Ollama's queue; retry later, or longer: sudo EMBED_T=<seconds> qdrant-recovery.sh check <counts file>"
+    || die "embed: no answer in $t s, $tries tries: a client's index run may be ahead of it in Ollama's queue; retry later, or longer: sudo EMBED_T=<seconds> qdrant-recovery.sh check <counts file>"
   [ "$rc" -eq 0 ] || die "embed failed (curl exit $rc): $out"
   json 'json.dumps(d["embeddings"][0])' <<<"$out" 2>/dev/null \
     || die "embed answered no embedding: $out"
 }
+
+# search COLLECTION VECTOR EMBEDDING LIMIT: how many points a 3-point query
+# returns, through VECTOR ("" for an unnamed one).
+search() {
+  local body
+  body=$(python3 -c 'import json, sys
+q = {"query": json.loads(sys.argv[1]), "limit": 3}
+if sys.argv[2]:
+    q["using"] = sys.argv[2]
+print(json.dumps(q))' "$3" "$2")
+  q "$4" -X POST -H 'Content-Type: application/json' -d "$body" \
+    "$QURL/collections/$1/points/query" | json 'len(d["result"]["points"])'
+}
+
+# The vector a collection's config names, or "" for an unnamed one.
+VEC='"" if "size" in (v := d["result"]["config"]["params"]["vectors"]) else next(iter(v))'
 
 snapshot() {
   local utc before name start dest
@@ -103,7 +129,7 @@ snapshot() {
 }
 
 check() {
-  local before=$1 now c n m vec emb body hits bad=0
+  local before=$1 now c n m vec emb hits bad=0
   EMBED_T=${EMBED_T:-60}
   [[ $EMBED_T =~ ^[1-9][0-9]*$ ]] || die "EMBED_T must be a whole number of seconds, 1 or more: not '$EMBED_T'"
   need_key
@@ -131,16 +157,9 @@ check() {
   # collection, through the vector its config names.
   c=$(awk '$1 ~ /^codebase_/' <<<"$now" | sort -k2 -n | tail -1 | cut -d' ' -f1)
   [ -n "$c" ] || die "no codebase_ collection to query"
-  vec=$(q 30 "$QURL/collections/$c" \
-    | json '"" if "size" in (v := d["result"]["config"]["params"]["vectors"]) else next(iter(v))')
-  emb=$(embed)
-  body=$(python3 -c 'import json, sys
-q = {"query": json.loads(sys.argv[1]), "limit": 3}
-if sys.argv[2]:
-    q["using"] = sys.argv[2]
-print(json.dumps(q))' "$emb" "$vec")
-  hits=$(q 30 -X POST -H 'Content-Type: application/json' -d "$body" \
-    "$QURL/collections/$c/points/query" | json 'len(d["result"]["points"])')
+  vec=$(q 30 "$QURL/collections/$c" | json "$VEC")
+  emb=$(embed "$EMBED_T" 3)
+  hits=$(search "$c" "$vec" "$emb" 30)
   echo "query $c: $hits hits"
   [ "$hits" -gt 0 ] || bad=1
 
@@ -148,8 +167,51 @@ print(json.dumps(q))' "$emb" "$vec")
   echo "check: ok"
 }
 
+# within VAR CAP: VAR := a call's limit, CAP seconds at most and never past
+# $deadline. Out of time is a failure, not a call with no limit.
+within() {
+  local left=$((deadline - SECONDS))
+  [ "$left" -ge 1 ] || die "query: Qdrant's list and collection info took over 10 s"
+  printf -v "$1" '%s' $((left < $2 ? left : $2))
+}
+
+# "<collection> <points> <vector>" per codebase_ collection, its size from
+# its info: exact counts of every collection took 55.6 s on 51 (#39). It runs
+# in $(...), where bash drops set -e, so each call fails it explicitly: a
+# skipped collection would query the wrong one.
+sizes() {
+  local t names c out
+  within t 5
+  names=$(q "$t" "$QURL/collections" \
+    | json '"\n".join(sorted(c["name"] for c in d["result"]["collections"] if c["name"].startswith("codebase_")))') \
+    || die "query: listing the collections failed"
+  for c in $names; do
+    within t 5
+    out=$(q "$t" "$QURL/collections/$c" | json "f'{d[\"result\"].get(\"points_count\") or 0} {($VEC) or \"-\"}'") \
+      || die "query: reading $c failed"
+    printf '%s %s\n' "$c" "$out"
+  done
+}
+
+query() {
+  local deadline now c vec emb hits
+  KEY_FILE=$RO_KEY_FILE
+  [ -r "$KEY_FILE" ] || die "can't read $KEY_FILE: run it as a member of group qdrant-ro, or through sudo"
+  deadline=$((SECONDS + 10))
+  now=$(sizes)
+  read -r c _ vec < <(sort -k2 -n <<<"$now" | tail -1)
+  [ -n "${c:-}" ] || die "no codebase_ collection to query"
+  [ "$vec" != "-" ] || vec=""
+  emb=$(embed 30 1)
+  hits=$(search "$c" "$vec" "$emb" 5)
+  echo "query $c: $hits hits"
+  [ "$hits" -gt 0 ] || die "query: no hits"
+  echo "query: ok"
+}
+
 case "${1:-}" in
   snapshot) [ $# -eq 1 ] || usage; snapshot ;;
   check) [ $# -eq 2 ] || usage; check "$2" ;;
+  query) [ $# -eq 1 ] || usage; query ;;
   *) usage ;;
 esac

@@ -45,6 +45,7 @@ SCRIPT = REPO_ROOT / "deploy" / "qdrant-recovery.sh"
 HOST_PATHS = re.compile(r"/etc/socraticode/|/var/backups")
 
 KEY = "qdrant-key"
+RO_KEY = "qdrant-ro-key"
 SNAPSHOT = "full-snapshot-2026-10-08-14-08-16.snapshot"
 INNER = b"inner snapshot bytes"
 
@@ -74,6 +75,14 @@ method = method or ("POST" if data else "GET")
 st = json.load(open(os.environ["STATE"]))
 Q, O = "https://index.taild0fb76.ts.net:6333", "http://index.taild0fb76.ts.net:11434"
 path = url.split("?")[0]
+# A slow Qdrant: a call to a path in qdrant_delays answers after that many
+# seconds, or past --max-time gives up as curl does.
+qd = st.get("qdrant_delays", {}).get(path.split(":6333", 1)[-1], 0)
+if qd and limit and qd > limit:
+    time.sleep(limit)
+    print(f"curl: (28) Operation timed out after {limit * 1000:.0f} ms", file=sys.stderr)
+    sys.exit(28)
+time.sleep(qd)
 if (method, path) == ("GET", Q + "/collections"):
     out = {"result": {"collections": [{"name": n} for n in st["counts"]]}}
 elif method == "POST" and path.endswith("/points/count"):
@@ -83,10 +92,17 @@ elif (method, path) == ("POST", Q + "/snapshots"):
 elif method == "DELETE" and path.startswith(Q + "/snapshots/"):
     out = {"result": True}
 elif method == "GET" and path.startswith(Q + "/collections/"):
-    out = {"result": {"config": {"params": {"vectors": {"size": 2}}}}}
+    name = path.split("/")[-1]
+    out = {"result": {
+        "points_count": st.get("points", st["counts"]).get(name),
+        "config": {"params": {"vectors": st.get("vectors", {"size": 2})}},
+    }}
 elif (method, path) == ("POST", O + "/api/embed"):
     # A slow Ollama: the Nth embed answers after embed_delays[N] seconds. Past
     # --max-time, curl gives up, as curl does: exit 28. With no limit, it waits.
+    if st.get("embed_rc"):
+        print(f"curl: ({st['embed_rc']}) as curl says it", file=sys.stderr)
+        sys.exit(st["embed_rc"])
     n = sum(O + "/api/embed" in c for c in open(os.environ["CURL_LOG"])) - 1
     delays = st.get("embed_delays", [])
     delay = delays[n] if n < len(delays) else 0
@@ -128,6 +144,7 @@ def host(tmp_path: Path) -> Path:
     """``tmp_path`` laid out as the script's host paths, stubs on ``PATH``."""
     (tmp_path / "etc" / "socraticode").mkdir(parents=True)
     (tmp_path / "etc" / "socraticode" / "qdrant.key").write_text(f"{KEY}\n")
+    (tmp_path / "etc" / "socraticode" / "qdrant-ro.key").write_text(f"{RO_KEY}\n")
     (tmp_path / "var" / "backups").mkdir(parents=True)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -391,3 +408,142 @@ def test_check_keeps_its_own_limits_whatever_t_says(host: Path, stray: str) -> N
         "POST /collections/codebase_a/points/query",
     ]
     assert {t for _, t in limits} == {"30"}
+
+
+# --- query (#40): the knob's recovery line --------------------------------
+#
+# apply.sh runs it as the knob user, never root, after a step that restarted
+# Qdrant and after the reboot, under `timeout -k 10 60` (knob.md:69,
+# _probe-lib.sh:174-184), with its output to /dev/null: the exit code is all a
+# run records. So it reads the read-only key, takes no counts file, sizes the
+# code collections from their info rather than exact counts (55.6 s for all
+# of them, #39), and holds every limit to its own budget.
+
+CODE = {"codebase_a": 10, "codebase_b": 40, "context_a": 99}
+
+
+def _query(host: Path, **kw: object) -> subprocess.CompletedProcess[str]:
+    return _run(host, "query", **kw)  # type: ignore[arg-type]
+
+
+def _calls(host: Path) -> list[str]:
+    return [c for c, _ in _qdrant_limits(host)]
+
+
+def test_query_passes_on_hits_against_the_largest_code_collection(host: Path) -> None:
+    done = _query(host, counts=CODE)
+    assert done.returncode == 0, done.stderr
+    assert "query codebase_b: 3 hits" in done.stdout
+
+
+def test_query_sizes_by_points_count_never_an_exact_count(host: Path) -> None:
+    done = _query(host, counts=CODE, points={"codebase_a": 50, "codebase_b": 40})
+    assert done.returncode == 0, done.stderr
+    assert "query codebase_a: 3 hits" in done.stdout
+    assert "/points/count" not in (host / "curl.log").read_text()
+
+
+def test_query_reads_only_the_code_collections(host: Path) -> None:
+    done = _query(host, counts=CODE)
+    assert done.returncode == 0, done.stderr
+    assert _calls(host) == [
+        "GET /collections",
+        "GET /collections/codebase_a",
+        "GET /collections/codebase_b",
+        "POST /collections/codebase_b/points/query",
+    ]
+
+
+def test_query_searches_through_the_named_vector(host: Path) -> None:
+    done = _query(host, counts=CODE, vectors={"dense": {"size": 2, "distance": "Cosine"}})
+    assert done.returncode == 0, done.stderr
+    (search,) = [c for c in (host / "curl.log").read_text().splitlines() if "/points/query" in c]
+    assert '"using": "dense"' in search
+
+
+def test_query_fails_when_it_finds_nothing(host: Path) -> None:
+    done = _query(host, counts=CODE, hits=0)
+    assert done.returncode != 0
+    assert "query codebase_b: 0 hits" in done.stdout
+
+
+def test_query_fails_with_no_code_collection(host: Path) -> None:
+    done = _query(host, counts={"context_a": 3})
+    assert done.returncode != 0
+    assert "no codebase_ collection" in done.stderr
+
+
+def test_query_takes_no_argument(host: Path) -> None:
+    done = _run(host, "query", "BEFORE")
+    assert done.returncode != 0
+    assert "usage" in done.stderr
+
+
+def test_query_sends_the_read_only_key_and_never_the_admin_key(host: Path) -> None:
+    done = _query(host, counts=CODE)
+    assert done.returncode == 0, done.stderr
+    sent = (host / "curl.log.sent").read_text()
+    assert f"api-key: {RO_KEY}" in sent
+    assert KEY not in sent.replace(RO_KEY, "")
+    assert RO_KEY not in (host / "curl.log").read_text()
+
+
+def _unreadable(path: Path) -> None:
+    path.chmod(0)
+    if os.access(path, os.R_OK):
+        pytest.skip("running as root: every file is readable")
+
+
+def test_query_runs_without_the_admin_key(host: Path) -> None:
+    """As the knob user, who can't read the root-only admin key."""
+    _unreadable(host / "etc" / "socraticode" / "qdrant.key")
+    done = _query(host, counts=CODE)
+    assert done.returncode == 0, done.stderr
+
+
+def test_query_without_the_read_only_key_names_its_group(host: Path) -> None:
+    _unreadable(host / "etc" / "socraticode" / "qdrant-ro.key")
+    done = _query(host, counts=CODE)
+    assert done.returncode != 0
+    assert "qdrant-ro.key" in done.stderr
+    assert "group qdrant-ro" in done.stderr
+    assert not (host / "curl.log").exists()
+
+
+@pytest.mark.parametrize("stray", ["0", "300", "soon"])
+def test_query_keeps_its_own_limits_whatever_the_environment_says(host: Path, stray: str) -> None:
+    """Each Qdrant call at most 5 s, the embed 30 s: EMBED_T is check's, not the mode's.
+
+    A recovery line has 60 s; a limit from the environment could spend it.
+    """
+    done = _query(host, counts=CODE, env={"EMBED_T": stray, "T": stray})
+    assert done.returncode == 0, done.stderr
+    assert {t for _, t in _qdrant_limits(host)} == {"5"}
+    (embed,) = _embeds(host)
+    assert "--max-time 30 " in embed
+
+
+def test_query_tries_the_embed_once(host: Path) -> None:
+    """A second try wouldn't fit in 60 s: the operator runs check, with its retries."""
+    done = _query(host, counts=CODE, embed_rc=28)
+    assert done.returncode != 0
+    assert len(_embeds(host)) == 1
+    assert "no answer in 30 s" in done.stderr
+    assert "qdrant-recovery.sh check" in done.stderr
+    assert "/points/query" not in (host / "curl.log").read_text()
+
+
+def test_query_lists_and_sizes_within_10_s_all_told(host: Path) -> None:
+    """The code collections grow with the cohort: their reads share one deadline.
+
+    Each info call answers in 4 s. The first two get 5 s each; the third gets
+    what's left of 10 s and times out, so the mode fails with no embed.
+    """
+    counts = {"codebase_a": 1, "codebase_b": 2, "codebase_c": 3}
+    delays = {f"/collections/{c}": 4 for c in counts}
+    done = _query(host, counts=counts, qdrant_delays=delays)
+    assert done.returncode != 0
+    limits = [int(t) for c, t in _qdrant_limits(host) if c.startswith("GET /collections/")]
+    assert limits[:2] == [5, 5]
+    assert len(limits) == 3 and limits[2] < 5
+    assert _embeds(host) == []
