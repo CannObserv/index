@@ -24,8 +24,9 @@
 # serialises embeds, so a client's index run can queue it behind a batch. Set
 # it after sudo (sudo EMBED_T=180 ...): sudo drops it from the caller's env.
 #
-# snapshot and check are root, because the API key is 0600 root. It reaches curl as a header file
-# from a process substitution, never as an argument: /proc has no hidepid here.
+# snapshot and check are root, because the API key is 0600 root. A key
+# reaches curl as a header file from a process substitution, never as an
+# argument: /proc has no hidepid here.
 set -euo pipefail
 
 # The name, not the address: the certificate covers only it (D14).
