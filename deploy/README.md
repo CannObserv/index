@@ -158,7 +158,7 @@ again in ten minutes, a missed renewal window closes for good.
 | `needrestart.conf.d/index.conf` | needrestart lists restarts and never performs them (#2), so an apt run cannot bounce Docker, and Qdrant and Ollama with it. Install it before any apt run (Installing a change, below). `sudo needrestart -m u -r l -b` then prints `Disabling Ubuntu mode` and restarts nothing. |
 | `engine-fingerprint.{py,json}` | the check-in's engine check (#11). The `.json` holds five probes (code, an artifact label, uppercase XML, a mixed-case and a lowercase query) and the vectors the pinned engine gave them. A probe below cosine 0.99999 is the `ollama:engine` finding. A probe that couldn't be embedded is no finding, because a timeout behind a client's batch isn't drift. Recapture with `python3 -I deploy/engine-fingerprint.py capture http://index.taild0fb76.ts.net:11434 deploy/engine-fingerprint.json`, only as part of an [engine change](#engine-change). |
 | `index-inflight.sh` | the patching knob's `inflight` (#9): prints how many writes Qdrant served in the last 5 min, so a step waits out a client's index run, this host's own included (D20). It reads `qdrant.service`'s journal, which `exedev` reads through group `adm`, never `docker logs` (#18). It first logs one unauthenticated request with a unique user agent, and exits 1, printing no count, unless that marker shows in the log: a silent log isn't an idle one. It also exits 1 when journald reports dropping the unit's lines in the window. |
-| `qdrant-recovery.sh` | Qdrant's recovery point and check for the steps `patching-hosts` doesn't run: a Docker restart, a Qdrant upgrade, an engine change (#9, #30). A patching run takes no snapshot here: the knob's `datastore qdrant` line has `recovery-point.sh` take it. `sudo qdrant-recovery.sh snapshot` writes the point counts and a full snapshot, copied **out of the container** (`--rm` discards its snapshots directory), mode 600, with the sha256 for the owner's off-node copy. `sudo qdrant-recovery.sh check <counts file>` after a step that stopped Qdrant: fails on a collection gone or emptied, or a real query with no hits. A patching run's counts file, from its recovery point, works too, and adds the real query the skill's check doesn't run. The query's embed waits `EMBED_T` seconds (60), up to 3 tries on a timeout only: Ollama serialises embeds, so a client's index run can queue it. Set it after `sudo` (`sudo EMBED_T=180 qdrant-recovery.sh check …`): `EMBED_T=180 sudo …` loses it to sudo's `env_reset`, and the check runs at 60 s. |
+| `qdrant-recovery.sh` | Qdrant's recovery point and check for the steps `patching-hosts` doesn't run: a Docker restart, a Qdrant upgrade, an engine change (#9, #30). A patching run takes no snapshot here: the knob's `datastore qdrant` line has `recovery-point.sh` take it. `sudo qdrant-recovery.sh snapshot` writes the point counts and a full snapshot, copied **out of the container** (`--rm` discards its snapshots directory), mode 600, with the sha256 for the owner's off-node copy. `sudo qdrant-recovery.sh check <counts file>` after a step that stopped Qdrant: fails on a collection gone or emptied, or a real query with no hits. A patching run's counts file, from its recovery point, works too, and adds the real query the skill's check doesn't run. The query's embed waits `EMBED_T` seconds (60), up to 3 tries on a timeout only: Ollama serialises embeds, so a client's index run can queue it. Set it after `sudo` (`sudo EMBED_T=180 qdrant-recovery.sh check …`): `EMBED_T=180 sudo …` loses it to sudo's `env_reset`, and the check runs at 60 s. `qdrant-recovery.sh query`, with no `sudo`, is the query alone (#40), for the knob user, through the [read-only key](#read-only-key): no counts file, the largest `codebase_` collection by its info's `points_count`, then one embed and a search. It keeps to 45 s of limits, under a knob command's 60: the list and the info calls share 10 s (5 s at most a call), the embed has 30 s and one try, and the search 5 s. It reads no `EMBED_T`. Exit 0 means hits. |
 | `apt-preferences.d/tailscale` | scopes `pkgs.tailscale.com`, which the knob follows: the site at 100, below Ubuntu, and `tailscale` and its keyring at 600 (#9). |
 | `apt-sources.list.d/nodesource.sources`, `apt-preferences.d/nodesource` | Node 26 from NodeSource, for this repo's own SocratiCode client and nothing else (D20, #18): the `node_26.x` source, and pins that hold the site at 100 and `nodejs` at 600. The knob follows `deb.nodesource.com`. Installed and checked by `scripts/nodesource.sh`, never by the lines below: apt can't use the source before the key is in place. See [Node](#node). |
 
@@ -210,6 +210,27 @@ first and run `check` after.
 images' embeddings are **bitwise identical** (`max abs diff 0.0`, cosine 1.0).
 So the slim image is not a backend change and fragments nothing under D7.
 Removing the stock image and pruning reclaimed **8.8 GB** (14 G → 5.2 G used).
+
+## Read-only key
+
+Qdrant has a second key, read-only, for the patching knob's `recovery` line (D22, #40). Knob commands run as the knob user, never root, and the admin key is root-only. The read-only key lists collections, reads their info, queries and counts. Every write gets 403. It lives in `qdrant.env`, beside the admin key, and in `/etc/socraticode/qdrant-ro.key`, `0640 root:qdrant-ro`. `/etc/socraticode` is `0750 root:qdrant-ro`, and `exedev` is the group's member. **It never goes to a client**: they keep the admin key ([installing-the-key.md](../docs/installing-the-key.md)).
+
+**Qdrant reads it only at a start, and any start takes it**: the Monday cert renewal, a crash, a Docker restart. So mint it in the window you restart in, never ahead of one. Minting and rotating are the same command:
+
+```bash
+index-inflight.sh                               # 0, or wait
+sudo qdrant-recovery.sh snapshot                # the recovery point (the owner's rule)
+sudo bash scripts/qdrant-ro-key.sh mint exedev  # from the checkout
+sudo systemctl restart qdrant
+```
+
+Then check it, in this order:
+- `sudo qdrant-recovery.sh check <the snapshot's counts file>`: the admin key still works, and nothing was lost.
+- `time sudo runuser -u exedev -- timeout -k 10 60 sh -c '/usr/local/bin/qdrant-recovery.sh query'`: the knob's own route (`knob.md`, `_probe-lib.sh`'s `knob_cmd`). Exit 0, well under 60 s.
+- A write with the read-only key gets 403.
+- One client's `codebase_search`.
+
+A rotation takes the same steps, and touches no client.
 
 ## Installing a change
 

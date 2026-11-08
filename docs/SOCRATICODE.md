@@ -22,7 +22,7 @@ after it, not in `AGENTS.md`.
 | Every symbol declared in a file | `codebase_symbols` |
 | Imports/dependents of a file | `codebase_graph_query` |
 | Import cycles | `codebase_graph_circular` |
-| The design record (D0–D20), the runbook, the key procedure, the patching knob — the declared artifacts | `codebase_context` / `codebase_context_search` |
+| The design record (D0–D22), the runbook, the key procedure, the patching knob — the declared artifacts | `codebase_context` / `codebase_context_search` |
 | Path-pattern walks ("all `*.py` under `src/`") | the Explore subagent |
 
 ## Prefetch

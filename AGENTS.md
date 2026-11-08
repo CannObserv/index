@@ -10,7 +10,7 @@ Deploy surface and operator tooling for **`co-index`**, the cohort's shared Socr
 
 Moved out of CannObserv/notifier with history (notifier#90, #1). **A bare `#N` in history before that move, or `notifier#N` anywhere, is a notifier issue.** From here on, `#N` means this repo.
 
-Design record, with every decision (D0–D20): [docs/plans/2026-09-11-shared-qdrant-vm-design.md](docs/plans/2026-09-11-shared-qdrant-vm-design.md). Host runbook: [deploy/README.md](deploy/README.md).
+Design record, with every decision (D0–D20, D22; D21 is #33's): [docs/plans/2026-09-11-shared-qdrant-vm-design.md](docs/plans/2026-09-11-shared-qdrant-vm-design.md). Host runbook: [deploy/README.md](deploy/README.md).
 
 <!-- BEGIN socraticode-policy -->
 ## Code Exploration Policy
@@ -66,6 +66,7 @@ uv run pre-commit install   # once per clone
 | `deploy/` | Everything installed on `co-index`: `qdrant.service`/`qdrant-run.sh`, `ollama.service`/`ollama-run.sh`/`ollama-slim/`, `qdrant-cert-renew.*` (D14), `index-checkin.*` (D10/D16) with `engine-fingerprint.*` (D19), `tailnet-bind.sh` (D3), `setup.sh.template` (first boot); for patching (#9), `index-inflight.sh`, `qdrant-recovery.sh`, `apt-preferences.d/tailscale`; Node's apt source and pins (D20) |
 | `.skills/patching-hosts` | The `patching-hosts` knob: windows, quiet range, services, health, in-flight gate, Tailscale and NodeSource origins. `datastore qdrant`: `recovery-point.sh` takes Qdrant's snapshot. `qdrant-recovery.sh` is for the steps the skill doesn't run, plus `check` after a step |
 | `scripts/install_qdrant_key.sh` | Installs the store's single API key into a *client* repo's `.claude/settings.local.json`. Key on stdin only, atomic 0600 write, refuses a target git would commit |
+| `scripts/qdrant-ro-key.sh` | Mints and rotates Qdrant's read-only key (D22, #40): `qdrant.env` and `/etc/socraticode/qdrant-ro.key` (`0640 root:qdrant-ro`), for `qdrant-recovery.sh query` as the knob user. Root, run from the checkout. Takes effect at Qdrant's next restart: in a window |
 | `scripts/reembed.py` | Re-embeds the store from its own payloads on an engine change (D19, #11). `--dry-run` is the gate and the drift check; `--apply` rewrites `dense` only. Procedure: deploy/README.md, "Engine change" |
 | `scripts/nodesource.sh` | Installs Node from NodeSource (`install`, root, fingerprint-checked key) and checks the host against `deploy/` (`check`). Refuses while `exedev` is in group `docker` (D20). Run from the checkout |
 | `scripts/pre-ship.sh` | `shipping-work`'s gate (#3): CI's steps, in CI's order, stops at the first failure. Dev-only; clients never run it |

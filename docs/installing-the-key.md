@@ -5,6 +5,10 @@ The SocratiCode store on `co-index` is gated by a **single global** Qdrant
 per-collection scope, so every cohort VM holds the same secret and a leak
 anywhere is a rotation everywhere.
 
+The store has one other key, read-only, and it never leaves `co-index`: it's
+the patching knob's, for a real query after a restart (D22, [the runbook](../deploy/README.md#read-only-key)).
+Never install it on a client. A client with it can't index.
+
 `scripts/install_qdrant_key.sh` merges it into a repo's git-ignored
 `.claude/settings.local.json`. **The key arrives on stdin** — never argv, which
 is visible in `ps` to every other process for the life of the call and lands in
