@@ -24,7 +24,7 @@ usage() { sed -n '/^# Usage:$/,/^#$/p' "$0" | sed '$d; s/^# \{0,1\}//' >&2; exit
 refuse() { echo "qdrant-ro-key: $*" >&2; exit 2; }
 
 mint() {
-  local user=$1 key env_tmp key_tmp
+  local user=$1 key env_tmp key_tmp rc
   [ "$(id -u)" -eq 0 ] || refuse "mint needs root: sudo bash $0 mint $user"
   getent passwd "$user" >/dev/null || refuse "no user $user"
   [ "$user" != root ] || refuse "not root: knob commands never run as root, so root isn't the knob user"
@@ -46,7 +46,15 @@ mint() {
   env_tmp=$(mktemp "$DIR/.qdrant.env.XXXXXX")
   key_tmp=$(mktemp "$DIR/.qdrant-ro.key.XXXXXX")
   trap 'rm -f "$env_tmp" "$key_tmp"' EXIT
-  { grep -v "^$VAR=" "$ENV_FILE" || true; printf '%s=%s\n' "$VAR" "$key"; } >"$env_tmp"
+  # grep -v exits 1 when it keeps no line, and 2 when it can't read: only
+  # the 2 is a failure. Qdrant started without the admin key would 401 every
+  # client, so the new file must still hold it.
+  rc=0
+  grep -v "^$VAR=" "$ENV_FILE" >"$env_tmp" || rc=$?
+  [ "$rc" -le 1 ] || refuse "couldn't read $ENV_FILE (grep exit $rc): it is unchanged"
+  printf '%s=%s\n' "$VAR" "$key" >>"$env_tmp"
+  grep -q '^QDRANT__SERVICE__API_KEY=.' "$env_tmp" \
+    || refuse "the new $ENV_FILE would have no QDRANT__SERVICE__API_KEY: it is unchanged"
   printf '%s\n' "$key" >"$key_tmp"
   chmod 0600 "$env_tmp"
   chgrp "$GROUP" "$key_tmp"

@@ -20,6 +20,7 @@ The script runs from a copy whose host path points into ``tmp_path``, with
 
 import os
 import re
+import shutil
 import stat
 import subprocess
 from pathlib import Path
@@ -196,3 +197,21 @@ def test_no_temporary_file_is_left(host: Path) -> None:
     done = _run(host, "mint", "exedev")
     assert done.returncode == 0, done.stderr
     assert sorted(p.name for p in _etc(host).iterdir()) == ["qdrant-ro.key", "qdrant.env"]
+
+
+def test_a_failed_rewrite_never_drops_the_admin_key(host: Path) -> None:
+    """grep -v exits 2 on a read error: qdrant.env must not lose its admin line.
+
+    Qdrant started with only a read-only key would 401 every client.
+    """
+    real = shutil.which("grep")
+    assert real and Path(real).parent != host / "bin"
+    (host / "bin" / "grep").write_text(
+        f'#!/usr/bin/env bash\nfor a; do [ "$a" = -v ] && exit 2; done\nexec {real} "$@"\n'
+    )
+    (host / "bin" / "grep").chmod(0o755)
+    done = _run(host, "mint", "exedev")
+    assert done.returncode != 0
+    assert (_etc(host) / "qdrant.env").read_text() == f"{ADMIN}\n"
+    assert not (_etc(host) / "qdrant-ro.key").exists()
+    assert sorted(p.name for p in _etc(host).iterdir()) == ["qdrant.env"]
