@@ -13,7 +13,8 @@ Ollama's every embed. The script counts Qdrant's **writes** and Ollama's
   as it starts it (``launch_slot_ … processing task``), so the inputs between
   two ``/api/embed`` request lines are one request's. A batch is a request of
   10 inputs or more, or one that took 10 s or more; inputs past the last
-  request line, 10 or more, are a batch still running. Measured over 7 days
+  request line, 10 or more, are a batch still running; 50 inputs in the
+  window from smaller requests, when nothing else counted, are one. Measured over 7 days
   (2,379 requests): a search embeds 1 input, the engine fingerprint (D19)
   embeds 5, every 10 min, in about 1.1 s, and neither ever crossed either
   line. Counted that way, the gate missed 1.6% of index-run time, all of it
@@ -620,5 +621,30 @@ def test_a_client_cant_hide_a_batch_with_its_path(stubs: Path) -> None:
     start a task line: a request line faked inside a path ends no batch."""
     fake = _gin("GET", '/x" | 200 | 1s | 1.1.1.1 | POST     "/api/embed')
     lines = [_task(i) for i in range(6)] + [fake] + [_task(10 + i) for i in range(6)]
+    done = _run(stubs, [], ollama=lines)
+    assert (done.returncode, done.stdout) == (0, "1\n")
+
+
+def test_a_stream_of_small_requests_is_a_batch(stubs: Path) -> None:
+    """The runbook's re-embed gate (``reembed.py --dry-run --batch 8``) runs
+    for hours against the live engine, 8 inputs and a few seconds a request,
+    and writes nothing to Qdrant. 50 inputs in the window are a batch: 10
+    times the fingerprint's 5. Over 7 days the rule held no window the
+    per-request one didn't."""
+    lines = [ln for _ in range(7) for ln in _embed(8, "4.2s")]
+    done = _run(stubs, [], ollama=lines)
+    assert (done.returncode, done.stdout) == (0, "1\n")
+
+
+def test_forty_nine_inputs_in_small_requests_are_not(stubs: Path) -> None:
+    lines = [ln for _ in range(7) for ln in _embed(7, "4.2s")]
+    done = _run(stubs, [], ollama=lines)
+    assert (done.returncode, done.stdout) == (0, "0\n")
+
+
+def test_the_stream_rule_adds_nothing_to_a_counted_batch(stubs: Path) -> None:
+    """A count says work is in flight; the rule names a stream nothing else
+    counted, so a window with a batch already counted stays at its count."""
+    lines = _embed(60, "50s")
     done = _run(stubs, [], ollama=lines)
     assert (done.returncode, done.stdout) == (0, "1\n")

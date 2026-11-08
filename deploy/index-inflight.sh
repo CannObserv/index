@@ -16,7 +16,9 @@
 # BATCH_SECONDS or more; inputs past the last request line, as many, are a
 # batch still running. A search embeds 1 input and the engine fingerprint
 # (D19) 5, every 10 min, in about 1.1 s: over 7 days and 2,379 requests,
-# neither crossed either line.
+# neither crossed either line. And a stream of small requests, STREAM_INPUTS
+# inputs or more in the window when nothing else counted, is one batch: the
+# runbook's re-embed gate sends 8 a request for hours and writes nothing.
 #
 # The logs are read from the units' journals, never `docker logs` (#18): a
 # knob command never runs as root, and D20 takes exedev out of group docker.
@@ -34,6 +36,7 @@ QURL="https://index.taild0fb76.ts.net:6333"
 OURL="http://index.taild0fb76.ts.net:11434"
 BATCH_INPUTS=10
 BATCH_SECONDS=10
+STREAM_INPUTS=50
 
 unknown() {
   echo "index-inflight: $*, so in-flight work is unknown" >&2
@@ -105,7 +108,7 @@ writes=$(grep -cE "$write" <<<"$qlog") || [ $? -eq 1 ] || unknown "grep failed o
 # starts llama-server's line, where no client writes. Prints the batches, or
 # "format" when a line isn't what was measured: an embed with no input in the
 # window, or a time it can't read.
-batches=$(LC_ALL=C awk -v k="$BATCH_INPUTS" -v s="$BATCH_SECONDS" '
+batches=$(LC_ALL=C awk -v k="$BATCH_INPUTS" -v s="$BATCH_SECONDS" -v w="$STREAM_INPUTS" '
   function secs(d,   v, num, unit) {
     gsub(/ /, "", d)
     if (d == "") return -1
@@ -135,6 +138,7 @@ batches=$(LC_ALL=C awk -v k="$BATCH_INPUTS" -v s="$BATCH_SECONDS" '
   }
   END {
     if (n >= k) b++
+    if (!b && inputs >= w) b = 1
     if (bad || (embeds && !inputs)) print "format"
     else print b + 0
   }
