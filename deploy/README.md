@@ -227,7 +227,12 @@ sudo systemctl restart qdrant
 Then check it, in this order:
 - `sudo qdrant-recovery.sh check <the snapshot's counts file>`: the admin key still works, and nothing was lost.
 - `time sudo runuser -u exedev -- timeout -k 10 60 sh -c '/usr/local/bin/qdrant-recovery.sh query'`: the knob's own route (`knob.md`, `_probe-lib.sh`'s `knob_cmd`). Exit 0, well under 60 s.
-- A write with the read-only key gets 403.
+- A write with the read-only key gets 403. This one is a no-op with any key: a collection that doesn't exist. The admin key would answer `200` with `"result":false` (measured on v1.20.0):
+  ```bash
+  sudo bash -c 'curl -sS -o /dev/null -w "%{http_code}\n" -X DELETE \
+    -H @<(printf "api-key: %s\n" "$(cat /etc/socraticode/qdrant-ro.key)") \
+    https://index.taild0fb76.ts.net:6333/collections/ro-key-probe'   # 403
+  ```
 - One client's `codebase_search`.
 
 A rotation takes the same steps, and touches no client.
