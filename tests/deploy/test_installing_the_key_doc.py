@@ -25,8 +25,8 @@ def _text() -> str:
     return DOC.read_text()
 
 
-def _first_index() -> int:
-    text = _text()
+def _first_index(text: str) -> int:
+    """The offset of ``text``'s first ``codebase_index``: offsets compare only within one string."""
     assert "codebase_index" in text, "the doc never names codebase_index"
     return text.index("codebase_index")
 
@@ -34,13 +34,13 @@ def _first_index() -> int:
 def test_a_reload_precedes_the_first_index() -> None:
     text = _text().lower()
     assert "reload the editor window" in text
-    assert text.index("reload the editor window") < _first_index()
+    assert text.index("reload the editor window") < _first_index(text)
 
 
 def test_the_mode_check_precedes_the_first_index() -> None:
     text = _text()
     assert MODE in text
-    assert text.index(MODE) < _first_index()
+    assert text.index(MODE) < _first_index(text)
 
 
 def test_the_check_ignore_step_is_written_once() -> None:
