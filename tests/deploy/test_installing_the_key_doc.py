@@ -8,8 +8,8 @@ CannObserv/usa-wa#556: nothing failed, and nothing reached co-index. The doc
 puts a reload and a server-side ``Qdrant mode: external`` check ahead of its
 first ``codebase_index``.
 
-**The ``check-ignore`` step is written once.** A merge left it, and its
-paragraph, in the doc twice until #42.
+**The ``check-ignore`` step is written once.** #1's move from notifier brought
+it, and its paragraph, in twice. They stayed that way until #42.
 
 These read the document. They pin the order of the steps, not their wording.
 """
