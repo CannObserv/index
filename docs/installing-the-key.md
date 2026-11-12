@@ -73,5 +73,6 @@ credential writes the value to stdout; that is how two were leaked during CannOb
 Rotation has no overlap window — Qdrant holds one `api_key`, so every client
 401s from the restart until it is updated. Sequence: mint, write
 `/etc/socraticode/qdrant.env`, `systemctl restart qdrant`, then step 2 against
-every VM. Not while an index is running: a half-written collection outlives the
-outage.
+every VM, then reload each client's editor window: a running server keeps the
+key it started with. Not while an index is running: a half-written collection
+outlives the outage.
