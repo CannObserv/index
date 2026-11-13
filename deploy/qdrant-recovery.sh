@@ -150,7 +150,7 @@ check() {
   [[ $EMBED_T =~ ^[1-9][0-9]*$ ]] || die "EMBED_T must be a whole number of seconds, 1 or more: not '$EMBED_T'"
   need_key
   [ -r "$before" ] || die "can't read $before"
-  now=$(counts)
+  now=$(counts) || exit
   echo "collections: $(wc -l <"$before") before, $(grep -c . <<<"$now") now;" \
     "points: $(total <"$before") before, $(total <<<"$now") now"
 
