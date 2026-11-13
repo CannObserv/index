@@ -84,6 +84,16 @@ if qd and limit and qd > limit:
     print(f"curl: (28) Operation timed out after {limit * 1000:.0f} ms", file=sys.stderr)
     sys.exit(28)
 time.sleep(qd)
+# A failing Qdrant: a call to a path in qdrant_fail answers [rc, body] as
+# curl --fail-with-body does: the body to stdout, curl's line to stderr.
+fail = st.get("qdrant_fail", {}).get(path.split(":6333", 1)[-1])
+if fail:
+    rc, body = fail
+    if body:
+        print(body)
+    if rc:
+        print(f"curl: ({rc}) as curl says it", file=sys.stderr)
+    sys.exit(rc)
 if (method, path) == ("GET", Q + "/collections"):
     out = {"result": {"collections": [{"name": n} for n in st["counts"]]}}
 elif method == "POST" and path.endswith("/points/count"):
@@ -307,6 +317,70 @@ def test_check_queries_the_largest_code_collection(host: Path) -> None:
     assert "query codebase_b:" in done.stdout
 
 
+# A failed call inside ``counts`` (#43). In check it runs in ``$(counts)``,
+# where bash drops ``set -e``: a failed count printed "<collection> " and a
+# failed list printed nothing, and check read either as a missing collection.
+# Each case: the path that fails, what it answers, and the message naming it.
+FAILED_CALLS = {
+    "list timed out": (
+        "/collections",
+        [28, ""],
+        "counts: listing the collections failed (curl exit 28)",
+    ),
+    "first count timed out": (
+        "/collections/codebase_a/points/count",
+        [28, ""],
+        "counts: counting codebase_a failed (curl exit 28)",
+    ),
+    # The last: its printf's status was the function's, so nothing failed.
+    "last count timed out": (
+        "/collections/context_a/points/count",
+        [28, ""],
+        "counts: counting context_a failed (curl exit 28)",
+    ),
+    "count refused": (
+        "/collections/codebase_a/points/count",
+        [22, '{"status": {"error": "Forbidden"}}'],
+        'counts: counting codebase_a failed (curl exit 22): {"status": {"error": "Forbidden"}}',
+    ),
+    "list without a list": (
+        "/collections",
+        [0, '{"result": {}}'],
+        'counts: the collection list answered no list: {"result": {}}',
+    ),
+    "count without a count": (
+        "/collections/context_a/points/count",
+        [0, '{"result": {}}'],
+        'counts: counting context_a answered no count: {"result": {}}',
+    ),
+}
+
+
+@pytest.mark.parametrize(("path", "answer", "message"), FAILED_CALLS.values(), ids=FAILED_CALLS)
+def test_check_names_a_failed_call_never_a_lost_collection(
+    host: Path, path: str, answer: list[object], message: str
+) -> None:
+    """A store that timed out isn't one that lost points: the operator decides on it."""
+    done = _check(host, qdrant_fail={path: answer})
+    assert done.returncode != 0
+    assert done.stderr.rstrip().endswith(f"qdrant-recovery: {message}")
+    assert "Traceback" not in done.stderr
+    for loss in ("missing", "emptied", "lost", "no codebase_ collection"):
+        assert loss not in done.stdout + done.stderr
+    assert "/points/query" not in (host / "curl.log").read_text()
+
+
+@pytest.mark.parametrize(("path", "answer", "message"), FAILED_CALLS.values(), ids=FAILED_CALLS)
+def test_snapshot_names_a_failed_call_and_takes_no_snapshot(
+    host: Path, path: str, answer: list[object], message: str
+) -> None:
+    done = _run(host, "snapshot", qdrant_fail={path: answer})
+    assert done.returncode != 0
+    assert done.stderr.rstrip().endswith(f"qdrant-recovery: {message}")
+    assert "Traceback" not in done.stderr
+    assert "/snapshots" not in (host / "curl.log").read_text()
+
+
 def _embeds(host: Path) -> list[str]:
     """Each embed call's argv, in order."""
     calls = (host / "curl.log").read_text().splitlines()
@@ -337,7 +411,10 @@ def test_three_timed_out_embeds_fail_loudly(host: Path) -> None:
     assert "Traceback" not in done.stderr
     assert "no answer in 1 s, 3 tries" in done.stderr
     # `EMBED_T=… sudo …` loses it to sudo's env_reset: name the form that works.
-    assert "sudo EMBED_T=" in done.stderr
+    assert done.stderr.rstrip().endswith(
+        "a client's index run may be ahead of it in Ollama's queue; retry later,"
+        " or longer: sudo EMBED_T=<seconds> qdrant-recovery.sh check <counts file>"
+    )
     assert "/points/query" not in (host / "curl.log").read_text()
 
 
@@ -529,9 +606,20 @@ def test_query_tries_the_embed_once(host: Path) -> None:
     done = _query(host, counts=CODE, embed_rc=28)
     assert done.returncode != 0
     assert len(_embeds(host)) == 1
-    assert "no answer in 30 s, 1 try:" in done.stderr
-    assert "qdrant-recovery.sh check" in done.stderr
     assert "/points/query" not in (host / "curl.log").read_text()
+
+
+def test_query_names_its_own_way_out_of_a_timed_out_embed(host: Path) -> None:
+    """query reads no EMBED_T (#43): its 30 s is fixed, so it names what is open to it."""
+    done = _query(host, counts=CODE, embed_rc=28)
+    assert done.returncode != 0
+    assert "EMBED_T" not in done.stderr
+    assert done.stderr.rstrip().endswith(
+        "qdrant-recovery: embed: no answer in 30 s, 1 try: a client's index run may be"
+        " ahead of it in Ollama's queue; query's 30 s is fixed: run it again once"
+        " index-inflight.sh reads 0, or run sudo qdrant-recovery.sh check <counts file>"
+        " by hand"
+    )
 
 
 def test_query_lists_and_sizes_within_10_s_all_told(host: Path) -> None:
