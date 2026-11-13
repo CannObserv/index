@@ -251,7 +251,7 @@ print(len(pts), pts[0]["id"] if pts else "-")
 sys.exit(0 if sys.argv[1] in tied else 6)'
 
 query() {
-  local deadline now c vec body out rc pt id hits top
+  local deadline now c vec body out rc pt id r hits top
   KEY_FILE=$RO_KEY_FILE
   [ -r "$KEY_FILE" ] || die "can't read $KEY_FILE: run it as a member of group qdrant-ro, or through sudo"
   deadline=$((SECONDS + 10))
@@ -284,9 +284,9 @@ print(json.dumps(q))' "${pt#*$'\n'}" "$vec")
   out=$(q 5 -X POST -H 'Content-Type: application/json' -d "$body" "$QURL/collections/$c/points/query") \
     || die "query: searching $c failed (curl exit $?)${out:+: $out}"
   rc=0
-  pt=$(python3 -c "$RANK" "$id" <<<"$out" 2>/dev/null) || rc=$?
+  r=$(python3 -c "$RANK" "$id" <<<"$out" 2>/dev/null) || rc=$?
   case $rc in
-    0 | 6) read -r hits top <<<"$pt" ;;
+    0 | 6) read -r hits top <<<"$r" ;;
     *) die "query: searching $c answered no points: $out" ;;
   esac
   if [ "$hits" -eq 0 ]; then
