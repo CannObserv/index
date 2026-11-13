@@ -676,6 +676,11 @@ QUERY_FAILS = {
         [7, ""],
         "query: listing the collections failed",
     ),
+    "info refused (down)": (
+        "/collections/codebase_a",
+        [7, ""],
+        "query: reading codebase_a failed",
+    ),
     "scroll refused (down)": (
         "/collections/codebase_b/points/scroll",
         [7, ""],
