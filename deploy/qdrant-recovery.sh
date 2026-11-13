@@ -20,9 +20,10 @@
 # checks counts), and holds itself to 45 s of limits: the list and each code
 # collection's info share 10 s, then one embed of 30 s, then a 5 s search.
 #
-# The query's embed waits EMBED_T seconds (60), up to 3 tries: Ollama
-# serialises embeds, so a client's index run can queue it behind a batch. Set
-# it after sudo (sudo EMBED_T=180 ...): sudo drops it from the caller's env.
+# check's embed waits EMBED_T seconds (60), up to 3 tries: Ollama serialises
+# embeds, so a client's index run can queue it behind a batch. Set it after
+# sudo (sudo EMBED_T=180 ...): sudo drops it from the caller's env. query's
+# embed is one try of 30 s, and reads no EMBED_T.
 #
 # snapshot and check are root, because the API key is 0600 root. A key
 # reaches curl as a header file from a process substitution, never as an
@@ -53,24 +54,34 @@ q() {
 }
 json() { python3 -c "import json, sys; d = json.load(sys.stdin); print($1)"; }
 
-# "<collection> <points>" per line, sorted by name; exact counts.
+# "<collection> <points>" per line, sorted by name; exact counts. check runs
+# it in $(...), where bash drops set -e, so each call fails it by name (#43):
+# a failed count printed "<collection> " and a failed list nothing, and check
+# read either as a missing collection. curl's own line, above, says why.
 counts() {
-  local names c n
-  names=$(q 30 "$QURL/collections" | json '"\n".join(sorted(c["name"] for c in d["result"]["collections"]))')
+  local out names c n
+  out=$(q 30 "$QURL/collections") \
+    || die "counts: listing the collections failed (curl exit $?)${out:+: $out}"
+  names=$(json '"\n".join(sorted(c["name"] for c in d["result"]["collections"]))' <<<"$out" 2>/dev/null) \
+    || die "counts: the collection list answered no list: $out"
   for c in $names; do
-    n=$(q 30 -X POST -H 'Content-Type: application/json' -d '{"exact": true}' \
-      "$QURL/collections/$c/points/count" | json 'd["result"]["count"]')
+    out=$(q 30 -X POST -H 'Content-Type: application/json' -d '{"exact": true}' \
+      "$QURL/collections/$c/points/count") \
+      || die "counts: counting $c failed (curl exit $?)${out:+: $out}"
+    n=$(json 'd["result"]["count"]' <<<"$out" 2>/dev/null) && [[ $n =~ ^[0-9]+$ ]] \
+      || die "counts: counting $c answered no count: $out"
     printf '%s %s\n' "$c" "$n"
   done
 }
 
 total() { awk '{ s += $2 } END { print s + 0 }'; }
 
-# embed LIMIT TRIES: the query's embedding, as JSON. Only a timeout is
-# retried: it's a queue, not a fault. curl reads --max-time 0 as no limit, so
-# check refuses one first.
+# embed LIMIT TRIES WAY-OUT: the query's embedding, as JSON. Only a timeout
+# is retried: it's a queue, not a fault. curl reads --max-time 0 as no limit,
+# so check refuses one first. WAY-OUT ends the timeout's message: each mode
+# names what is open to it (#43).
 embed() {
-  local t=$1 tries=$2 i out rc said
+  local t=$1 tries=$2 way=$3 i out rc said
   for ((i = 1; i <= tries; i++)); do
     rc=0
     out=$(curl -sS --fail-with-body --max-time "$t" "$OURL/api/embed" \
@@ -81,7 +92,7 @@ embed() {
   done
   [ "$tries" -eq 1 ] && said="1 try" || said="$tries tries"
   [ "$rc" -ne 28 ] \
-    || die "embed: no answer in $t s, $said: a client's index run may be ahead of it in Ollama's queue; retry later, or longer: sudo EMBED_T=<seconds> qdrant-recovery.sh check <counts file>"
+    || die "embed: no answer in $t s, $said: a client's index run may be ahead of it in Ollama's queue; $way"
   [ "$rc" -eq 0 ] || die "embed failed (curl exit $rc): $out"
   json 'json.dumps(d["embeddings"][0])' <<<"$out" 2>/dev/null \
     || die "embed answered no embedding: $out"
@@ -160,7 +171,7 @@ check() {
   c=$(awk '$1 ~ /^codebase_/' <<<"$now" | sort -k2 -n | tail -1 | cut -d' ' -f1)
   [ -n "$c" ] || die "no codebase_ collection to query"
   vec=$(q 30 "$QURL/collections/$c" | json "$VEC")
-  emb=$(embed "$EMBED_T" 3)
+  emb=$(embed "$EMBED_T" 3 "retry later, or longer: sudo EMBED_T=<seconds> qdrant-recovery.sh check <counts file>")
   hits=$(search "$c" "$vec" "$emb" 30)
   echo "query $c: $hits hits"
   [ "$hits" -gt 0 ] || bad=1
@@ -204,7 +215,8 @@ query() {
   read -r c _ vec < <(sort -k2 -n <<<"$now" | tail -1)
   [ -n "${c:-}" ] || die "no codebase_ collection to query"
   [ "$vec" != "-" ] || vec=""
-  emb=$(embed 30 1)
+  # No EMBED_T here: the 30 s is fixed, to fit the knob's 60.
+  emb=$(embed 30 1 "query's 30 s is fixed: run it again once index-inflight.sh reads 0, or run sudo qdrant-recovery.sh check <counts file> by hand")
   hits=$(search "$c" "$vec" "$emb" 5)
   echo "query $c: $hits hits"
   [ "$hits" -gt 0 ] || die "query: no hits"
