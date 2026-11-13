@@ -115,12 +115,15 @@ print(json.dumps(q))' "$3" "$2")
 VEC='"" if "size" in (v := d["result"]["config"]["params"]["vectors"]) else next(iter(v))'
 
 snapshot() {
-  local utc before name start dest
+  local utc before now name start dest
   need_key
   utc=$(date -u +%Y%m%dT%H%M%SZ)
   umask 077
   before="$OUT/qdrant-counts-before-$utc.txt"
-  counts >"$before"
+  # All the counts or no file: a partial one would read, later, as a baseline
+  # that lost collections.
+  now=$(counts) || exit
+  printf '%s' "${now:+$now$'\n'}" >"$before"
   echo "counts: $before ($(wc -l <"$before") collections, $(total <"$before") points)"
 
   start=$(date +%s)

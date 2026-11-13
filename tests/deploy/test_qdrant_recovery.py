@@ -379,6 +379,8 @@ def test_snapshot_names_a_failed_call_and_takes_no_snapshot(
     assert done.stderr.rstrip().endswith(f"qdrant-recovery: {message}")
     assert "Traceback" not in done.stderr
     assert "/snapshots" not in (host / "curl.log").read_text()
+    # A partial counts file would read, later, as a baseline that lost collections.
+    assert _backups(host, "qdrant-counts-before-*.txt") == []
 
 
 def _embeds(host: Path) -> list[str]:
