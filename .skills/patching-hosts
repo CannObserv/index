@@ -60,4 +60,11 @@ exception ordering:ollama.service 2027-05-03 Ollama doesn't use Qdrant; clients 
 # Tailscale auth key is revoked (owner, 2026-10-08), so a re-run joins nothing.
 exception setup-script:redelivered 2027-01-08 the script's Tailscale auth key is revoked
 
+# nginx came with the exe.dev image's own apt-get install (2026-09-09), never
+# started, never named here (#44). Pruning it on this host is drift from that
+# image, so the knob says so. Disabled and masked 2026-11-13 by prune.sh, with
+# its record in /var/backups/patching-hosts-prune-nginx. The date ends the
+# soak; the purge follows it, from the savepoint.
+exception disabled:nginx 2026-12-13 shipped by the exe.dev image, never used here; the prune is drift from the image
+
 # No caller lines: an outage degrades codebase_search to grep (D9).
