@@ -26,7 +26,7 @@
 # Qdrant. It scrolls one point of the largest code collection with its stored
 # vector, searches with that vector, and needs the point back at the top. A
 # tie at the top score counts: duplicate chunks share a vector, and Qdrant
-# orders no tie. So it proves that Qdrant ranks by vector after a restart,
+# promises no order among ties. So it proves that Qdrant ranks by vector after a restart,
 # not that Ollama embeds: ollama.service has its own health line
 # (/api/tags), and check still embeds.
 #
