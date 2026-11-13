@@ -11,19 +11,28 @@
 #
 #   sudo qdrant-recovery.sh snapshot        counts, then a full snapshot
 #   sudo qdrant-recovery.sh check BEFORE    counts against BEFORE, and a query
-#        qdrant-recovery.sh query           the query alone, read-only key
+#        qdrant-recovery.sh query           a search alone, read-only key
 #
 # `query` is the knob's recovery line (#40), run as the knob user, never root,
-# under a 60 s limit, with only its exit code recorded: by apply.sh after a
-# step that restarted Qdrant, and by probe.sh --post-boot. So it reads the
-# read-only key (group qdrant-ro, D22), takes no counts file (the skill
-# checks counts), and holds itself to 45 s of limits: the list and each code
-# collection's info share 10 s, then one embed of 30 s, then a 5 s search.
+# under timeout -k 10 60 (a TERM at 60 s, a KILL 10 s after it), with only its
+# exit code recorded: by apply.sh after a step that restarted Qdrant, and by
+# probe.sh --post-boot. So it reads the read-only key (group qdrant-ro, D22),
+# takes no counts file (the skill checks counts), and holds itself to 20 s of
+# limits: the list and each code collection's info share 10 s, then a 5 s
+# scroll and a 5 s search.
+#
+# query calls no Ollama (#46). Ollama serves embeds from one queue, a
+# client's index run holds it for minutes, and the line failed on a healthy
+# Qdrant. It scrolls one point of the largest code collection with its stored
+# vector, searches with that vector, and needs the point back at the top. A
+# tie at the top score counts: duplicate chunks share a vector, and Qdrant
+# orders no tie. So it proves that Qdrant ranks by vector after a restart,
+# not that Ollama embeds: ollama.service has its own health line
+# (/api/tags), and check still embeds.
 #
 # check's embed waits EMBED_T seconds (60), up to 3 tries: Ollama serialises
 # embeds, so a client's index run can queue it behind a batch. Set it after
-# sudo (sudo EMBED_T=180 ...): sudo drops it from the caller's env. query's
-# embed is one try of 30 s, and reads no EMBED_T.
+# sudo (sudo EMBED_T=180 ...): sudo drops it from the caller's env.
 #
 # snapshot and check are root, because the API key is 0600 root. A key
 # reaches curl as a header file from a process substitution, never as an
@@ -76,10 +85,10 @@ counts() {
 
 total() { awk '{ s += $2 } END { print s + 0 }'; }
 
-# embed LIMIT TRIES WAY-OUT: the query's embedding, as JSON. Only a timeout
+# embed LIMIT TRIES WAY-OUT: check's query embedding, as JSON. Only a timeout
 # is retried: it's a queue, not a fault. curl reads --max-time 0 as no limit,
-# so check refuses one first. WAY-OUT ends the timeout's message: each mode
-# names what is open to it (#43).
+# so check refuses one first. WAY-OUT ends the timeout's message, naming
+# what is open to the caller (#43). query embeds nothing (#46).
 embed() {
   local t=$1 tries=$2 way=$3 i out rc said
   for ((i = 1; i <= tries; i++)); do
@@ -199,18 +208,50 @@ sizes() {
   local t names c out
   within t 5
   names=$(q "$t" "$QURL/collections" \
-    | json '"\n".join(sorted(c["name"] for c in d["result"]["collections"] if c["name"].startswith("codebase_")))') \
+    | json '"\n".join(sorted(c["name"] for c in d["result"]["collections"] if c["name"].startswith("codebase_")))' 2>/dev/null) \
     || die "query: listing the collections failed"
   for c in $names; do
     within t 5
-    out=$(q "$t" "$QURL/collections/$c" | json "f'{d[\"result\"].get(\"points_count\") or 0} {($VEC) or \"-\"}'") \
+    out=$(q "$t" "$QURL/collections/$c" | json "f'{d[\"result\"].get(\"points_count\") or 0} {($VEC) or \"-\"}'" 2>/dev/null) \
       || die "query: reading $c failed"
     printf '%s %s\n' "$c" "$out"
   done
 }
 
+# A scroll's answer on stdin, the vector's name ("" for an unnamed one) in
+# argv: the first point's id, then its stored vector as JSON. Exit 3: no
+# point list; 4: no point; 5: the point holds no such vector (its id printed).
+PICK='import json, sys
+try:
+    pts = json.load(sys.stdin)["result"]["points"]
+    assert isinstance(pts, list)
+except Exception:
+    sys.exit(3)
+if not pts:
+    sys.exit(4)
+v = pts[0].get("vector")
+if sys.argv[1]:
+    v = v.get(sys.argv[1]) if isinstance(v, dict) else None
+print(pts[0].get("id"))
+if not isinstance(v, list) or not v:
+    sys.exit(5)
+print(json.dumps(v))'
+
+# A search's answer on stdin, the scrolled id in argv: "<hits> <top id>".
+# Exit 0 when the id ties at the top score, 6 when it doesn't, 3 on no
+# point list.
+RANK='import json, sys
+try:
+    pts = json.load(sys.stdin)["result"]["points"]
+    top = pts[0]["score"] if pts else 0
+    tied = [str(p["id"]) for p in pts if abs(p["score"] - top) <= 1e-6 * max(1, abs(top))]
+except Exception:
+    sys.exit(3)
+print(len(pts), pts[0]["id"] if pts else "-")
+sys.exit(0 if sys.argv[1] in tied else 6)'
+
 query() {
-  local deadline now c vec emb hits
+  local deadline now c vec body out rc pt id hits top
   KEY_FILE=$RO_KEY_FILE
   [ -r "$KEY_FILE" ] || die "can't read $KEY_FILE: run it as a member of group qdrant-ro, or through sudo"
   deadline=$((SECONDS + 10))
@@ -218,11 +259,43 @@ query() {
   read -r c _ vec < <(sort -k2 -n <<<"$now" | tail -1)
   [ -n "${c:-}" ] || die "no codebase_ collection to query"
   [ "$vec" != "-" ] || vec=""
-  # No EMBED_T here: the 30 s is fixed, to fit the knob's 60.
-  emb=$(embed 30 1 "query's 30 s is fixed: run it again once index-inflight.sh reads 0, or run sudo qdrant-recovery.sh check <counts file> by hand")
-  hits=$(search "$c" "$vec" "$emb" 5)
-  echo "query $c: $hits hits"
-  [ "$hits" -gt 0 ] || die "query: no hits"
+
+  # One point and its stored vector, the one the search goes through.
+  body=$(python3 -c 'import json, sys
+print(json.dumps({"limit": 1, "with_payload": False, "with_vector": [sys.argv[1]] if sys.argv[1] else True}))' "$vec")
+  out=$(q 5 -X POST -H 'Content-Type: application/json' -d "$body" "$QURL/collections/$c/points/scroll") \
+    || die "query: scrolling $c failed (curl exit $?)${out:+: $out}"
+  rc=0
+  pt=$(python3 -c "$PICK" "$vec" <<<"$out" 2>/dev/null) || rc=$?
+  case $rc in
+    0) ;;
+    4) die "query: $c has no point to search with" ;;
+    5) die "query: $c's point $pt holds no ${vec:-unnamed} vector to search with" ;;
+    *) die "query: scrolling $c answered no points: $out" ;;
+  esac
+  id=${pt%%$'\n'*}
+
+  # 10 deep, so a few duplicates tied at the top can't push the point out.
+  body=$(python3 -c 'import json, sys
+q = {"query": json.loads(sys.argv[1]), "limit": 10}
+if sys.argv[2]:
+    q["using"] = sys.argv[2]
+print(json.dumps(q))' "${pt#*$'\n'}" "$vec")
+  out=$(q 5 -X POST -H 'Content-Type: application/json' -d "$body" "$QURL/collections/$c/points/query") \
+    || die "query: searching $c failed (curl exit $?)${out:+: $out}"
+  rc=0
+  pt=$(python3 -c "$RANK" "$id" <<<"$out" 2>/dev/null) || rc=$?
+  case $rc in
+    0 | 6) read -r hits top <<<"$pt" ;;
+    *) die "query: searching $c answered no points: $out" ;;
+  esac
+  if [ "$hits" -eq 0 ]; then
+    echo "query $c: 0 hits"
+    die "query: no hits"
+  fi
+  [ "$rc" -eq 0 ] \
+    || die "query: $c's top hit is $top, not the scrolled point $id: the search answers, but doesn't rank by the vector"
+  echo "query $c: $hits hits, the scrolled point $id at the top"
   echo "query: ok"
 }
 
