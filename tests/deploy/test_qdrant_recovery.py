@@ -74,6 +74,7 @@ with open(os.environ["CURL_LOG"] + ".sent", "a") as f:
     f.write(" | ".join(sent) + "\n")
 method = method or ("POST" if data else "GET")
 st = json.load(open(os.environ["STATE"]))
+SCROLLED = {"id": 7, "vector": [0.3, 0.4]}
 Q, O = "https://index.taild0fb76.ts.net:6333", "http://index.taild0fb76.ts.net:11434"
 path = url.split("?")[0]
 # A slow Qdrant: a call to a path in qdrant_delays answers after that many
@@ -126,8 +127,15 @@ elif (method, path) == ("POST", O + "/api/embed"):
         print(json.dumps({"error": st["embed_error"]}))
         sys.exit(22)
     out = st.get("embed_answer", {"embeddings": [[0.1, 0.2]]})
+elif method == "POST" and path.endswith("/points/scroll"):
+    out = {"result": {"points": st.get("scroll", [SCROLLED]), "next_page_offset": None}}
 elif method == "POST" and path.endswith("/points/query"):
-    out = {"result": {"points": [{"id": i, "score": 0.68} for i in range(st["hits"])]}}
+    # Ranked [id, score] pairs from $STATE, or the scrolled point first, at
+    # the self-similarity a stored vector gets, then others below it.
+    first = [p.get("id") for p in st.get("scroll", [SCROLLED])][:1]
+    ids = first + list(range(100, 200))
+    ranked = st.get("ranked") or [[i, 0.68 if n else 1.0] for n, i in enumerate(ids)][: st["hits"]]
+    out = {"result": {"points": [{"id": i, "score": s} for i, s in ranked]}}
 else:
     sys.exit(f"stub curl: no route for {method} {url}")
 print(json.dumps(out))
@@ -498,6 +506,12 @@ def test_check_keeps_its_own_limits_whatever_t_says(host: Path, stray: str) -> N
 # code is all a run records. So it reads the read-only key, takes no counts file, sizes the
 # code collections from their info rather than exact counts (55.6 s for all
 # of them, #39), and holds every limit to its own budget.
+#
+# It calls no Ollama (#46): a client's index run holds Ollama's one queue, and
+# the line failed on a healthy Qdrant. It scrolls one point of the largest
+# code collection with its stored vector, searches with that, and needs the
+# point back at the top. A tie at the top score counts: duplicate chunks
+# share a vector, and Qdrant orders no tie.
 
 CODE = {"codebase_a": 10, "codebase_b": 40, "context_a": 99}
 
@@ -530,15 +544,174 @@ def test_query_reads_only_the_code_collections(host: Path) -> None:
         "GET /collections",
         "GET /collections/codebase_a",
         "GET /collections/codebase_b",
+        "POST /collections/codebase_b/points/scroll",
         "POST /collections/codebase_b/points/query",
     ]
 
 
+def _body(host: Path, path: str) -> dict[str, object]:
+    """The JSON body of the one call to ``path``."""
+    (call,) = [c for c in (host / "curl.log").read_text().splitlines() if path in c]
+    args = call.split(" ")
+    return json.loads(" ".join(args[args.index("-d") + 1 : -1]))
+
+
+DENSE = {"dense": {"size": 2, "distance": "Cosine"}}
+NAMED = [{"id": 7, "vector": {"dense": [0.3, 0.4], "bm25": {"indices": [1], "values": [0.5]}}}]
+
+
 def test_query_searches_through_the_named_vector(host: Path) -> None:
-    done = _query(host, counts=CODE, vectors={"dense": {"size": 2, "distance": "Cosine"}})
+    done = _query(host, counts=CODE, vectors=DENSE, scroll=NAMED)
     assert done.returncode == 0, done.stderr
-    (search,) = [c for c in (host / "curl.log").read_text().splitlines() if "/points/query" in c]
-    assert '"using": "dense"' in search
+    assert _body(host, "/points/query")["using"] == "dense"
+
+
+def test_query_searches_with_the_scrolled_points_stored_vector(host: Path) -> None:
+    """One point, its named vector alone, no payload: the store's own vector, no embed."""
+    done = _query(host, counts=CODE, vectors=DENSE, scroll=NAMED)
+    assert done.returncode == 0, done.stderr
+    assert _body(host, "/points/scroll") == {
+        "limit": 1,
+        "with_payload": False,
+        "with_vector": ["dense"],
+    }
+    assert _body(host, "/points/query")["query"] == [0.3, 0.4]
+
+
+def test_query_scrolls_and_searches_an_unnamed_vector(host: Path) -> None:
+    done = _query(host, counts=CODE)
+    assert done.returncode == 0, done.stderr
+    assert _body(host, "/points/scroll")["with_vector"] is True
+    search = _body(host, "/points/query")
+    assert search["query"] == [0.3, 0.4]
+    assert "using" not in search
+
+
+def test_query_never_calls_ollama(host: Path) -> None:
+    """A client's index run holds Ollama's one queue for minutes (#46): Qdrant is the proof."""
+    done = _query(host, counts=CODE, embed_rc=28)
+    assert done.returncode == 0, done.stderr
+    assert _embeds(host) == []
+    assert ":11434" not in (host / "curl.log").read_text()
+
+
+def test_query_passes_when_the_scrolled_point_is_the_top_hit(host: Path) -> None:
+    done = _query(host, counts=CODE, ranked=[[7, 1.0], [100, 0.9], [101, 0.7]])
+    assert done.returncode == 0, done.stderr
+    assert "query codebase_b: 3 hits, the scrolled point 7 at the top" in done.stdout
+    assert done.stdout.rstrip().endswith("query: ok")
+
+
+def test_query_passes_when_the_scrolled_point_ties_at_the_top(host: Path) -> None:
+    """Duplicate chunks share a vector, and Qdrant orders no tie (two of 1800, #46)."""
+    ranked = [[100, 1.0000001], [101, 1.0], [7, 1.0000001], [102, 0.7]]
+    done = _query(host, counts=CODE, ranked=ranked)
+    assert done.returncode == 0, done.stderr
+
+
+def test_query_searches_deep_enough_for_a_few_ties(host: Path) -> None:
+    done = _query(host, counts=CODE)
+    assert done.returncode == 0, done.stderr
+    assert _body(host, "/points/query")["limit"] == 10
+
+
+@pytest.mark.parametrize(
+    "ranked",
+    [
+        [[100, 0.99], [7, 0.98], [101, 0.5]],  # below the top
+        [[100, 0.99], [101, 0.98], [102, 0.5]],  # not in the answer
+    ],
+    ids=["below the top", "absent"],
+)
+def test_query_fails_when_the_scrolled_point_isnt_the_top_hit(
+    host: Path, ranked: list[list[float]]
+) -> None:
+    """A search that answers but doesn't rank by the vector is no proof."""
+    done = _query(host, counts=CODE, ranked=ranked)
+    assert done.returncode != 0
+    assert "Traceback" not in done.stderr
+    assert done.stderr.rstrip().endswith(
+        "qdrant-recovery: query: codebase_b's top hit is 100, not the scrolled point 7:"
+        " the search answers, but doesn't rank by the vector"
+    )
+
+
+def test_query_fails_on_a_collection_with_no_points(host: Path) -> None:
+    """The largest is empty only when every one is; points_count can be stale too."""
+    done = _query(host, counts=CODE, scroll=[])
+    assert done.returncode != 0
+    assert "Traceback" not in done.stderr
+    assert done.stderr.rstrip().endswith(
+        "qdrant-recovery: query: codebase_b has no point to search with"
+    )
+    assert "/points/query" not in (host / "curl.log").read_text()
+
+
+@pytest.mark.parametrize(
+    ("vectors", "point", "says"),
+    [
+        (DENSE, {"id": 7, "vector": {"bm25": {"indices": [1], "values": [0.5]}}}, "dense"),
+        (DENSE, {"id": 7}, "dense"),
+        ({"size": 2}, {"id": 7, "vector": None}, "unnamed"),
+        ({"size": 2}, {"id": 7, "vector": []}, "unnamed"),
+    ],
+    ids=["named, absent", "named, no vector at all", "unnamed, null", "unnamed, empty"],
+)
+def test_query_fails_on_a_point_with_no_stored_vector(
+    host: Path, vectors: dict[str, object], point: dict[str, object], says: str
+) -> None:
+    done = _query(host, counts=CODE, vectors=vectors, scroll=[point])
+    assert done.returncode != 0
+    assert "Traceback" not in done.stderr
+    assert done.stderr.rstrip().endswith(
+        f"qdrant-recovery: query: codebase_b's point 7 holds no {says} vector to search with"
+    )
+    assert "/points/query" not in (host / "curl.log").read_text()
+
+
+# Qdrant down, refusing, or answering nonsense, at each of query's calls.
+QUERY_FAILS = {
+    "list refused (down)": (
+        "/collections",
+        [7, ""],
+        "query: listing the collections failed",
+    ),
+    "scroll refused (down)": (
+        "/collections/codebase_b/points/scroll",
+        [7, ""],
+        "query: scrolling codebase_b failed (curl exit 7)",
+    ),
+    "scroll forbidden": (
+        "/collections/codebase_b/points/scroll",
+        [22, '{"status": {"error": "Forbidden"}}'],
+        'query: scrolling codebase_b failed (curl exit 22): {"status": {"error": "Forbidden"}}',
+    ),
+    "scroll without points": (
+        "/collections/codebase_b/points/scroll",
+        [0, '{"result": {}}'],
+        'query: scrolling codebase_b answered no points: {"result": {}}',
+    ),
+    "search refused (down)": (
+        "/collections/codebase_b/points/query",
+        [7, ""],
+        "query: searching codebase_b failed (curl exit 7)",
+    ),
+    "search without points": (
+        "/collections/codebase_b/points/query",
+        [0, '{"result": {}}'],
+        'query: searching codebase_b answered no points: {"result": {}}',
+    ),
+}
+
+
+@pytest.mark.parametrize(("path", "answer", "message"), QUERY_FAILS.values(), ids=QUERY_FAILS)
+def test_query_fails_by_name_when_qdrant_is_down_or_says_nothing(
+    host: Path, path: str, answer: list[object], message: str
+) -> None:
+    done = _query(host, counts=CODE, qdrant_fail={path: answer})
+    assert done.returncode != 0
+    assert "Traceback" not in done.stderr
+    assert done.stderr.rstrip().endswith(f"qdrant-recovery: {message}")
 
 
 def test_query_fails_when_it_finds_nothing(host: Path) -> None:
@@ -592,36 +765,18 @@ def test_query_without_the_read_only_key_names_its_group(host: Path) -> None:
 
 @pytest.mark.parametrize("stray", ["0", "300", "soon"])
 def test_query_keeps_its_own_limits_whatever_the_environment_says(host: Path, stray: str) -> None:
-    """Each Qdrant call at most 5 s, the embed 30 s: EMBED_T is check's, not the mode's.
+    """Each Qdrant call at most 5 s, scroll and search included: 20 s of limits in all.
 
     A recovery line has 60 s; a limit from the environment could spend it.
     """
     done = _query(host, counts=CODE, env={"EMBED_T": stray, "T": stray})
     assert done.returncode == 0, done.stderr
-    assert {t for _, t in _qdrant_limits(host)} == {"5"}
-    (embed,) = _embeds(host)
-    assert "--max-time 30 " in embed
-
-
-def test_query_tries_the_embed_once(host: Path) -> None:
-    """A second try wouldn't fit in 60 s: the operator runs check, with its retries."""
-    done = _query(host, counts=CODE, embed_rc=28)
-    assert done.returncode != 0
-    assert len(_embeds(host)) == 1
-    assert "/points/query" not in (host / "curl.log").read_text()
-
-
-def test_query_names_its_own_way_out_of_a_timed_out_embed(host: Path) -> None:
-    """query reads no EMBED_T (#43): its 30 s is fixed, so it names what is open to it."""
-    done = _query(host, counts=CODE, embed_rc=28)
-    assert done.returncode != 0
-    assert "EMBED_T" not in done.stderr
-    assert done.stderr.rstrip().endswith(
-        "qdrant-recovery: embed: no answer in 30 s, 1 try: a client's index run may be"
-        " ahead of it in Ollama's queue; query's 30 s is fixed: run it again once"
-        " index-inflight.sh reads 0, or run sudo qdrant-recovery.sh check <counts file>"
-        " by hand"
-    )
+    limits = _qdrant_limits(host)
+    assert [c for c, _ in limits][-2:] == [
+        "POST /collections/codebase_b/points/scroll",
+        "POST /collections/codebase_b/points/query",
+    ]
+    assert {t for _, t in limits} == {"5"}
 
 
 def test_query_lists_and_sizes_within_10_s_all_told(host: Path) -> None:
