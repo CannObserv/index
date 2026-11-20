@@ -165,7 +165,9 @@ processors:
 
   # Known token shapes, masked in every kept string: the same Bash command
   # sits in tool_parameters (full_command) and in tool_input. The prefix
-  # stays, so the report sees that a token was there. \x22 is a double quote,
+  # stays, so the report sees that a token was there. Shapes, not secrets:
+  # user:pass@host in a URL, `curl -u`, a cloud provider's keys and a PEM
+  # block are written as sent. \x22 is a double quote,
   # \x27 a single one and \x5c a backslash: a value ends at any of them, since
   # both attributes are JSON text. Then each value is cut at 4096 characters:
   # full_command arrives untruncated, and a heredoc is file contents by
@@ -176,13 +178,31 @@ processors:
     log_statements:
       - context: log
         statements:
-          - replace_all_patterns(attributes, "value", "(gh[pousr]_)[A-Za-z0-9]{20,}", "$${1}[REDACTED]")
+          - replace_all_patterns(attributes, "value", "(gh[pousr]_)[A-Za-z0-9_]{20,}", "$${1}[REDACTED]")
           - replace_all_patterns(attributes, "value", "(github_pat_)[A-Za-z0-9_]{20,}", "$${1}[REDACTED]")
           - replace_all_patterns(attributes, "value", "(sk-ant-)[A-Za-z0-9_-]{8,}", "$${1}[REDACTED]")
           - replace_all_patterns(attributes, "value", "(tskey-)[A-Za-z0-9_-]{8,}", "$${1}[REDACTED]")
-          - replace_all_patterns(attributes, "value", "(?i)(api-key:[ ]*)[^ \\x22\\x27\\x5c]+", "$${1}[REDACTED]")
-          - replace_all_patterns(attributes, "value", "(?i)((?:bearer|basic)[ ]+)[A-Za-z0-9._~+/=-]{16,}", "$${1}[REDACTED]")
-          - replace_all_patterns(attributes, "value", "(?i)(key[^0-9a-z]{1,8})[0-9a-f]{64,}", "$${1}[REDACTED]")
+          # api-key, api_key or apikey, as a header, a dict entry or a query
+          # parameter: the name, then quotes, then : or =, then the value.
+          - >-
+            replace_all_patterns(attributes, "value",
+            "(?i)(api[-_]?key[\\x22\\x27\\x5c]*[ \\t]*[:=][ \\t\\x22\\x27\\x5c]*)[^ \\t\\x22\\x27\\x5c&]+",
+            "$${1}[REDACTED]")
+          # An Authorization header's whole value, whatever its scheme, up to
+          # the closing quote. Then a bearer value with no header before it.
+          - >-
+            replace_all_patterns(attributes, "value",
+            "(?i)(authorization[\\x22\\x27\\x5c]*[ \\t]*[:=][ \\t\\x22\\x27\\x5c]*)[^\\x22\\x27\\x5c]+",
+            "$${1}[REDACTED]")
+          - >-
+            replace_all_patterns(attributes, "value",
+            "(?i)(bearer[ \\t]+)[^ \\t\\x22\\x27\\x5c]{8,}", "$${1}[REDACTED]")
+          # 32 hex or more after a name that holds key, token, secret or
+          # password: QDRANT_KEY_RO=..., "api_key": "...", --token ...
+          - >-
+            replace_all_patterns(attributes, "value",
+            "(?i)((?:key|token|secret|passw(?:or)?d)[a-z0-9_-]{0,24}[^0-9a-z]{1,12})[0-9a-f]{32,}",
+            "$${1}[REDACTED]")
           - truncate_all(attributes, 4096)
 
 exporters:

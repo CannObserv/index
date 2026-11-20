@@ -59,6 +59,21 @@ SECRETS = {
     "api-key header": "hdr" + "S3cr3tValue" * 3,
     "bearer": "eyJ" + "hbGciOiJIUzI1NiJ9" * 3,
     "hex after key": "0123456789abcdef" * 4,
+    # CR 4: the same shapes as people and tools actually write them.
+    "hex in json": "fedcba9876543210" * 4,
+    "hex after a longer name": "a1b2c3d4e5f60718" * 4,
+    "hex after token": "0f1e2d3c4b5a6978" * 4,
+    "shorter hex after secret": "9a8b7c6d5e" * 4,
+    "api-key in a dict": "dictS3cr3t" + "Zz9" * 4,
+    "api_key in a query": "queryS3cr3t" + "Qq7" * 3,
+    "short bearer": "dv-tkn-9x7q",
+    "bearer with a colon": "abcdefghijklmnopqrst" + ":" + "TAILsecretTAIL",
+    "bearer in lower case": "lowerB3arer" + "Ww4" * 3,
+    "bearer with no header": "bareB3arer" + "Kk2" * 3,
+    "sk-ant after no name": "sk-ant-" + "api03-" + "Uu1-_" * 12,
+    "basic": "dXNlcjpwYXNz" + "d29yZDEyMw==",
+    "authorization token": "1122334455" * 4,
+    "gh with an underscore": "ghp_" + "ab_CD" * 8,
 }
 
 IDENTITY = {
@@ -226,6 +241,24 @@ BASH_SECRET_COMMAND = " ; ".join(
         f"curl -H 'X-API-Key: {SECRETS['api-key header']}' http://status:9000/keep-status",
         f'curl -H "Authorization: Bearer {SECRETS["bearer"]}" https://api.example.test/keep-bearer',
         f"QDRANT_API_KEY={SECRETS['hex after key']} run-keep-hex",
+        'curl -d "{\\"api_key\\": \\"'
+        + SECRETS["hex in json"]
+        + '\\"}" https://x.example.test/keep-json',
+        f"QDRANT_KEY_RO={SECRETS['hex after a longer name']} run-keep-ro",
+        f"STATUS_TOKEN={SECRETS['hex after token']} run-keep-token",
+        f"CLIENT_SECRET={SECRETS['shorter hex after secret']} run-keep-secret",
+        'python3 -c \'requests.get(u, headers={"api-key": "'
+        + SECRETS["api-key in a dict"]
+        + "\"})'",
+        f'curl "https://a.example.test/keep-query?api_key={SECRETS["api_key in a query"]}&page=2"',
+        f'curl -H "Authorization: Bearer {SECRETS["short bearer"]}" https://a.example.test/keep-short',
+        f'curl -H "Authorization: Bearer {SECRETS["bearer with a colon"]}" https://a.example.test/keep-colon',
+        f"curl -H 'authorization:bearer {SECRETS['bearer in lower case']}' u",
+        f"curl --oauth2-bearer {SECRETS['bearer with no header']} https://a.example.test/keep-bare",
+        f"echo {SECRETS['sk-ant after no name']}",
+        f'curl -H "Authorization: Basic {SECRETS["basic"]}" https://a.example.test/keep-basic',
+        f'curl -H "Authorization: token {SECRETS["authorization token"]}" https://a.example.test/keep-token',
+        f"echo {SECRETS['gh with an underscore']}",
     ]
 )
 
@@ -737,6 +770,13 @@ def test_a_masked_command_keeps_what_the_report_reads(collector: Collector) -> N
         "http://status:9000/keep-status",
         "https://api.example.test/keep-bearer",
         "run-keep-hex",
+        "https://x.example.test/keep-json",
+        "run-keep-secret",
+        "keep-query?api_key=[REDACTED]&page=2",
+        "https://a.example.test/keep-short",
+        "https://a.example.test/keep-colon",
+        "https://a.example.test/keep-basic",
+        "https://a.example.test/keep-token",
         "[REDACTED]",
     ):
         assert kept in command
