@@ -113,6 +113,11 @@ def host(tmp_path: Path) -> Path:
         'printf "%s\\n" "${sent[*]}" >> "$CURL_LOG.sent"\n'
         'env | grep -o "^STATUS_[A-Z_]*" >> "$CURL_LOG.env" || true\n'
         '[[ " $* " != *" @- "* ]] || cat > "$CURL_LOG.body"\n'
+        # STUB_OTEL=<code>:<exit> is the collector's answer alone, as real
+        # curl gives it: 000 and exit 7 for a refused connection.
+        'if [[ " $* " == *":4318/"* && -n ${STUB_OTEL:-} ]]; then\n'
+        '  printf "%s" "${STUB_OTEL%%:*}"; exit "${STUB_OTEL##*:}"\n'
+        "fi\n"
         "[[ -n ${STUB_HEALTHY:-} ]] || exit 0\n"
         'if [[ " $* " == *"/api/tags"* ]]; then\n'
         '  out=; prev=; for a in "$@"; do [[ $prev != -o ]] || out=$a; prev=$a; done\n'
@@ -362,6 +367,26 @@ def test_a_collector_that_does_not_answer_is_a_finding(host: Path) -> None:
     assert _run(host).returncode == 0
     assert "otel:collector" in _fault(host)
     assert "empty export" in _finding(host, "otel:collector")["message"]
+
+
+@pytest.mark.parametrize(
+    ("answer", "said"),
+    [("000:7", "000"), ("000:28", "000"), ("503:0", "503"), ("404:0", "404")],
+    ids=["refused", "timed out", "refusing data", "no pipeline"],
+)
+def test_a_collector_that_is_down_or_refusing_is_a_finding_and_the_checkin_goes(
+    host: Path, answer: str, said: str
+) -> None:
+    """curl exits 7 on a refused connection and 28 on a timeout: under
+    ``set -e`` either would end the script, and the host would go silent
+    over a dead collector. And only 200 is healthy: the memory limiter
+    answers 503 while it refuses data (CR 8)."""
+    _write(host, "status.env", STATUS_ENV)
+    result = _run(host, healthy=True, STUB_OTEL=answer)
+    assert result.returncode == 0, result.stderr
+    assert _fault(host) == ["otel:collector"]
+    assert said in _finding(host, "otel:collector")["message"]
+    assert len(_checkins(host)) == 1
 
 
 def _threshold() -> int:
