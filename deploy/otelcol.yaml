@@ -90,7 +90,10 @@ processors:
           - set(flags, 0)
           - set(dropped_attributes_count, 0)
           # tool_result: its fields that need no content flag, plus
-          # tool_parameters and tool_input. `error`, the full message, goes.
+          # tool_parameters and tool_input, each for the tools listed further
+          # down. `error`, the full message, goes. These two lists are the
+          # whole allowlist only while filter/keep lets through these two
+          # events and no other: an event added there needs its list here.
           - >-
             keep_keys(attributes, ["event.name", "event.timestamp", "event.sequence",
             "session.id", "prompt.id", "cohort.host", "vcs.repository.name", "app.version",
@@ -117,6 +120,14 @@ processors:
             where attributes["tool_name"] == nil
             or not IsMatch(attributes["tool_name"],
             "^(Grep|Glob|Bash|Read|Agent|Task)$|^mcp__(plugin_socraticode_)?socraticode__")
+          # tool_parameters stays only where Claude Code's documentation
+          # fills it: Bash (the command), Agent (its type), Skill (its name)
+          # and MCP tools (server and tool). For any other tool it is empty
+          # today, and whatever a later release puts there isn't kept.
+          - >-
+            delete_key(attributes, "tool_parameters")
+            where attributes["tool_name"] == nil
+            or not IsMatch(attributes["tool_name"], "^(Bash|Agent|Task|Skill)$|^mcp__")
           # Read: the path alone, as {"file_path":"…"}. Any other shape goes.
           - >-
             replace_pattern(attributes["tool_input"],

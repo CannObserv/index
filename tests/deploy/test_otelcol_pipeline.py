@@ -50,6 +50,9 @@ LAST = "last-event-marker"
 SECRETS = {
     "ghp": "ghp_" + "a1B2c3D4e5" * 4,
     "ghs": "ghs_" + "Z9y8X7w6V5" * 4,
+    "gho": "gho_" + "Q1w2E3r4T5" * 4,
+    "ghu": "ghu_" + "M9n8B7v6C5" * 4,
+    "ghr": "ghr_" + "L1k2J3h4G5" * 4,
     "github_pat": "github_pat_" + "11ABCDEFG0" + "_" + "q" * 60,
     "sk-ant": "sk-ant-" + "api03-" + "Tt0-_" * 12,
     "tskey": "tskey-" + "auth-" + "kABCDEF1CNTRL-" + "m" * 32,
@@ -195,12 +198,27 @@ DROPPED_INPUT = {
     "mcp__github__search_code": _json(query=f"{DROP}-other-mcp"),
     # Named so a loose match on "socraticode" would keep it.
     "mcp__not_socraticode__thing": _json(query=f"{DROP}-lookalike"),
+    # Real tools whose names hold a listed one: the list is anchored.
+    "TaskCreate": _json(subject=f"{DROP}-task-create"),
+    "BashOutput": _json(bash_id=f"{DROP}-bash-output"),
+    "NotebookRead": _json(notebook_path=f"/{DROP}/n.ipynb"),
+    "ReadMcpResourceTool": _json(uri=f"{DROP}-resource"),
+    "Skill": _json(skill="x", args=f"{DROP}-skill-args"),
 }
+#: Tools whose ``tool_parameters`` the documentation fills: Bash (the
+#: command), Agent (its type), Skill (its name) and MCP tools (server, tool).
+PARAMETERS_KEPT = {"Bash", "Agent", "Task", "Skill"}
+
+
+def _keeps_parameters(tool: str) -> bool:
+    return tool in PARAMETERS_KEPT or tool.startswith("mcp__")
+
 
 BASH_SECRET_COMMAND = " ; ".join(
     [
         f"git clone https://x-access-token:{SECRETS['ghp']}@github.com/CannObserv/keep-clone-url",
         f"GH_TOKEN={SECRETS['ghs']} gh api repos/CannObserv/keep-gh-api/contents/x",
+        f"echo {SECRETS['gho']} {SECRETS['ghu']} {SECRETS['ghr']}",
         f"echo {SECRETS['github_pat']}",
         f"ANTHROPIC_API_KEY={SECRETS['sk-ant']} claude -p hi",
         f"tailscale up --auth-key={SECRETS['tskey']}",
@@ -219,7 +237,12 @@ def _corpus() -> list[tuple[str, dict]]:
         for n, (tool, value) in enumerate(KEPT_INPUT.items())
     ]
     dropped_tools = [
-        _tool_result(tool, f"drop-{n}", tool_input=value)
+        _tool_result(
+            tool,
+            f"drop-{n}",
+            tool_input=value,
+            tool_parameters=_json(note="kept" if _keeps_parameters(tool) else f"{DROP}-parameters"),
+        )
         for n, (tool, value) in enumerate(DROPPED_INPUT.items())
     ]
     exports = [
@@ -238,6 +261,10 @@ def _corpus() -> list[tuple[str, dict]]:
                 _tool_result("Read", "read-2", tool_input=f"{DROP}-not-the-documented-shape"),
                 _tool_result(None, "nameless-1", tool_input=_json(content=f"{DROP}-nameless")),
                 _tool_result("Bash", "structured-1", tool_input={"command": f"{DROP}-structured"}),
+                _tool_result("Bash", "structured-2", tool_parameters={"x": f"{DROP}-structured"}),
+                _tool_result("Bash", "structured-3", tool_input=12345678, tool_parameters=True),
+                # What a client without OTEL_LOG_TOOL_DETAILS sends: no input at all.
+                _tool_result("Read", "read-3"),
                 _tool_result(
                     "Bash",
                     "failed-1",
@@ -558,7 +585,7 @@ def test_tool_input_is_kept_for_a_listed_tool(collector: Collector, n: int) -> N
     attributes = _records(collector)[f"keep-{n}"]["attributes"]
     assert attributes["tool_name"] == tool
     assert attributes["tool_input"] == sent
-    assert attributes["tool_parameters"] == _json(mcp_tool_name="x")
+    assert ("tool_parameters" in attributes) is _keeps_parameters(tool)
 
 
 @pytest.mark.parametrize("n", range(len(DROPPED_INPUT)), ids=list(DROPPED_INPUT))
@@ -567,6 +594,20 @@ def test_tool_input_is_dropped_for_any_other_tool(collector: Collector, n: int) 
     attributes = _records(collector)[f"drop-{n}"]["attributes"]
     assert "tool_input" not in attributes
     assert attributes["tool_result_size_bytes"] == 345
+
+
+@pytest.mark.parametrize("n", range(len(DROPPED_INPUT)), ids=list(DROPPED_INPUT))
+def test_tool_parameters_stay_only_where_the_documentation_fills_them(
+    collector: Collector, n: int
+) -> None:
+    """``tool_input`` is gated by tool, and this was not: a release that
+    gave Edit or Write a parameter would have put it on disk (CR 5)."""
+    tool = list(DROPPED_INPUT)[n]
+    attributes = _records(collector)[f"drop-{n}"]["attributes"]
+    if _keeps_parameters(tool):
+        assert attributes["tool_parameters"] == _json(note="kept")
+    else:
+        assert "tool_parameters" not in attributes
 
 
 def test_a_read_keeps_its_path_alone(collector: Collector) -> None:
@@ -584,9 +625,18 @@ def test_a_record_with_no_tool_name_loses_its_input(collector: Collector) -> Non
     assert "tool_input" not in _records(collector)["nameless-1"]["attributes"]
 
 
-def test_an_input_that_is_not_a_string_is_dropped(collector: Collector) -> None:
-    """Redaction reads strings only, so a structured value would pass it."""
-    assert "tool_input" not in _records(collector)["structured-1"]["attributes"]
+@pytest.mark.parametrize("record", ["structured-1", "structured-2", "structured-3"])
+def test_an_input_that_is_not_a_string_is_dropped(collector: Collector, record: str) -> None:
+    """Both are JSON text or nothing: a map, a number, a boolean."""
+    attributes = _records(collector)[record]["attributes"]
+    assert "tool_input" not in attributes and "tool_parameters" not in attributes
+
+
+def test_a_read_with_no_input_is_kept(collector: Collector) -> None:
+    """Under ``propagate`` a statement that erred on the missing value would
+    lose every batch holding a Read."""
+    attributes = _records(collector)["read-3"]["attributes"]
+    assert attributes["tool_name"] == "Read" and "tool_input" not in attributes
 
 
 def test_the_body_is_the_event_name(collector: Collector) -> None:
