@@ -4,7 +4,15 @@ The run script's own ``docker run`` words are reused, so the image, the
 config and every hardening flag under test are the ones that run. Three
 things change, and only these: the name, the publish (loopback, a port Docker
 picks) and the two host paths (the tracked config, and a scratch data
-directory). The mode option of a mount is kept.
+directory). The mode option of a mount is kept. ``--rm`` is dropped, so a
+collector that exits at its start still has logs to show.
+
+**No mount may reach a host path.** On co-index the real directory is
+``/var/lib/otelcol``, with the cohort's data in it. If the run script's
+mounts changed and this didn't follow, the test container would mount it
+read-write as root and write fixtures into it. ``adapt`` refuses any mount
+whose source isn't the scratch directory or a file in this checkout, and any
+mount spelled in a form it doesn't rewrite.
 
 Docker is reached plainly where the user may (CI), and through ``sudo -n`` on
 co-index, where ``exedev`` is out of group ``docker`` (D20). The data
@@ -14,11 +22,15 @@ capability to write anywhere else, so its files are read back through
 where that would leave the pipeline unproven.
 """
 
+import calendar
+import getpass
 import json
 import os
+import re
 import shlex
 import socket
 import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -43,7 +55,9 @@ def docker_run_words(script: Path) -> list[str]:
     """``script``'s ``exec docker run`` statement as words, continuation lines
     joined and the comments above it ignored."""
     text = script.read_text()
-    statement = text[text.index("exec docker run") :].replace("\\\n", " ")
+    start = re.search(r"^exec docker run", text, flags=re.M)  # never one in a comment
+    assert start is not None, f"{script.name} has no `exec docker run` statement"
+    statement = text[start.start() :].replace("\\\n", " ")
     return shlex.split(statement.splitlines()[0])
 
 
@@ -107,9 +121,12 @@ class Collector:
         return found.stdout.split()
 
     def raw(self, name: str) -> str:
-        """``name``'s text in the data directory, or nothing if it isn't there."""
-        read = _sudo("cat", str(self.data / name), check=False)
-        return read.stdout if read.returncode == 0 else ""
+        """``name``'s text in the data directory, or nothing if it isn't
+        there. A file that is there and can't be read is a failure: read as
+        empty, it would pass every "nothing was written" scan."""
+        if _sudo("test", "-e", str(self.data / name), check=False).returncode != 0:
+            return ""
+        return _sudo("cat", str(self.data / name)).stdout
 
     def lines(self, name: str) -> list[dict]:
         return [json.loads(line) for line in self.raw(name).splitlines()]
@@ -129,24 +146,73 @@ class Collector:
         return shown.stdout + shown.stderr
 
 
-@contextmanager
-def running(tmp: Path, planted: dict[str, str] | None = None) -> Iterator[Collector]:
-    """The collector, up and answering, with ``planted`` files already in its
-    data directory. Stopped, and its root-owned directory removed, on exit."""
-    docker_cmd = docker()
-    data = tmp / "otelcol-data"
-    name = f"otelcol-test-{uuid.uuid4().hex[:12]}"
-    words = docker_run_words(RUN_SCRIPT)[3:]  # past `exec docker run`
+MOUNT_FLAGS = ("--volume", "-v", "--mount", "--tmpfs", "--volumes-from")
+
+
+def adapt(words: list[str], name: str, data: Path) -> list[str]:
+    """``docker run`` arguments for a test, from the run script's own words
+    (past ``exec docker run``): see the module's docstring."""
     swaps = {"otelcol": name, f"${{ADDR}}:{PORT}:{PORT}": f"127.0.0.1::{PORT}"}
     paths = {HOST_CONFIG: str(CONFIG), DATA_DIR: str(data)}
     args = []
     for word in words:
+        if word == "--rm":
+            continue
         word = swaps.get(word, word)
         source, colon, rest = word.partition(":")
         if colon and source in paths:
             word = f"{paths[source]}:{rest}"
         args.append(word)
     assert name in args and f"127.0.0.1::{PORT}" in args, "the run statement was not adapted"
+    other = [w for w in args if w.startswith(MOUNT_FLAGS) and w != "--volume"]
+    assert not other, f"a mount this helper does not rewrite: {other}"
+    for source in (v.partition(":")[0] for v in options(args, "--volume")):
+        inside = Path(source) == data or REPO_ROOT in Path(source).parents
+        assert inside, f"the test container would mount the host's {source}"
+    return args
+
+
+def _reap_stale(docker_cmd: list[str], minutes: int = 30) -> None:
+    """A pytest that was killed leaves its container running, 256 MiB of
+    this host's 8 GB, and a root-owned directory its own cleanup can't
+    remove. Nothing else would ever take them. Only what is older than any
+    run: a second session's live container is left alone."""
+    listed = subprocess.run(
+        [*docker_cmd, "ps", "-a", "--filter", "name=otelcol-test-", "--format", "{{.Names}}"],
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    for name in listed:
+        created = subprocess.run(
+            [*docker_cmd, "inspect", "--format", "{{.Created}}", name],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        try:
+            # .Created is UTC, to the nanosecond.
+            age = time.time() - calendar.timegm(time.strptime(created[:19], "%Y-%m-%dT%H:%M:%S"))
+        except ValueError:
+            continue
+        if age > minutes * 60:
+            subprocess.run([*docker_cmd, "rm", "-f", name], capture_output=True)
+    scratch = Path(tempfile.gettempdir()) / f"pytest-of-{getpass.getuser()}"
+    if scratch.is_dir():
+        _sudo(
+            "find", str(scratch), "-maxdepth", "3", "-type", "d", "-name", "otelcol-data",
+            "-user", "root", "-mmin", f"+{minutes}", "-prune", "-exec", "rm", "-rf", "{}", "+",
+            check=False,
+        )  # fmt: skip
+
+
+@contextmanager
+def running(tmp: Path, planted: dict[str, str] | None = None) -> Iterator[Collector]:
+    """The collector, up and answering, with ``planted`` files already in its
+    data directory. Stopped, and its root-owned directory removed, on exit."""
+    docker_cmd = docker()
+    _reap_stale(docker_cmd)
+    data = tmp / "otelcol-data"
+    name = f"otelcol-test-{uuid.uuid4().hex[:12]}"
+    args = adapt(docker_run_words(RUN_SCRIPT)[3:], name, data)
     try:
         _sudo("install", "-d", "-m", "700", "-o", "root", "-g", "root", str(data))
         for planted_name, content in (planted or {}).items():
@@ -155,7 +221,8 @@ def running(tmp: Path, planted: dict[str, str] | None = None) -> Iterator[Collec
             _sudo("sh", "-c", 'printf %s "$1" > "$2"', "sh", content, str(target))
         started = subprocess.run([*docker_cmd, "run", "-d", *args], capture_output=True, text=True)
         assert started.returncode == 0, started.stderr
-        collector = Collector(_published(docker_cmd, name), data, name, docker_cmd)
+        collector = Collector(0, data, name, docker_cmd)
+        collector.url = f"http://127.0.0.1:{_published(collector)}"
         _await_ready(collector)
         yield collector
     finally:
@@ -163,11 +230,15 @@ def running(tmp: Path, planted: dict[str, str] | None = None) -> Iterator[Collec
         _sudo("rm", "-rf", str(data), check=False)
 
 
-def _published(docker_cmd: list[str], name: str) -> int:
+def _published(collector: Collector) -> int:
+    """The loopback port Docker picked. A container that already exited has
+    none, and says why in its logs: a config this image rejects, most often."""
     shown = subprocess.run(
-        [*docker_cmd, "port", name, f"{PORT}/tcp"], capture_output=True, text=True, check=True
-    ).stdout
-    return int(shown.splitlines()[0].rsplit(":", 1)[1])
+        [*collector._docker, "port", collector.name, f"{PORT}/tcp"], capture_output=True, text=True
+    )
+    if shown.returncode != 0 or not shown.stdout.strip():
+        pytest.fail(f"the collector is not running. Its logs: {collector.logs()[-3000:]}")
+    return int(shown.stdout.splitlines()[0].rsplit(":", 1)[1])
 
 
 def _await_ready(collector: Collector, seconds: float = 30) -> None:
@@ -178,5 +249,12 @@ def _await_ready(collector: Collector, seconds: float = 30) -> None:
                 return
         except OSError:
             pass
+        state = subprocess.run(
+            [*collector._docker, "inspect", "--format", "{{.State.Running}}", collector.name],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        if state != "true":
+            break  # it exited: say why now, not after the wait
         time.sleep(0.3)
     pytest.fail(f"the collector never answered. {collector.logs()[-3000:]}")

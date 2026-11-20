@@ -117,7 +117,8 @@ def test_the_not_yet_live_port_is_dated_where_it_is_recorded() -> None:
     """A documented rule ahead of the live one is drift unless it says so,
     with the issue that closes it."""
     row = next(ln for ln in DESIGN.read_text().splitlines() if ln.startswith("| **D17**"))
-    assert ":4318" in row and "#34" in row and "not yet live" in row
+    assert ":4318" in row and "#34" in row
+    assert re.search(r"not yet live on \d{4}-\d\d-\d\d", row), "the day it was last true"
 
 
 def test_d17_names_every_peer_this_node_sees() -> None:

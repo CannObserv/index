@@ -321,6 +321,15 @@ def test_it_says_what_it_did(data: Path) -> None:
     )
 
 
+@pytest.mark.parametrize("unit", ["otelcol-retention.service", "otelcol-retention.timer"])
+def test_systemd_ignores_no_key_of_the_retention_units(unit: str) -> None:
+    """A key systemd ignores is a setting that isn't one: ``Nice=`` in the
+    wrong section would run zstd at full priority beside Ollama."""
+    from test_units import _ignored_by_systemd
+
+    assert _ignored_by_systemd(DEPLOY / unit) == []
+
+
 def _unit(name: str) -> str:
     return (DEPLOY / name).read_text()
 
@@ -329,7 +338,9 @@ def test_the_timer_runs_daily_and_catches_up() -> None:
     """``Persistent=true``: a run missed while the host was down is due at
     boot, not a day later."""
     timer = _unit("otelcol-retention.timer")
-    assert re.search(r"^OnCalendar=\*-\*-\* \d\d:\d\d:00 UTC$", timer, flags=re.M)
+    # 03:30: before the Monday cert renewal (04:00), the disk GC (05:15) and
+    # the knob's windows (05:15 on). The runbook and AGENTS.md say this time.
+    assert "OnCalendar=*-*-* 03:30:00 UTC\n" in timer
     assert "Persistent=true" in timer
     assert "WantedBy=timers.target" in timer
 

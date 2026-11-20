@@ -20,6 +20,7 @@ nothing starts and no host path is touched.
 """
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -27,7 +28,9 @@ import pytest
 from collector import DEPLOY, docker_run_words, options
 
 PORTS = {"qdrant-run.sh": 6333, "ollama-run.sh": 11434, "otelcol-run.sh": 4318}
-OTHER_WAYS_TO_OPEN_A_PORT = ("-p", "-P", "--publish-all", "--network", "--net", "--expose")
+#: Every other spelling of a publish, attached forms included (``-p4318:4318``,
+#: ``--publish=…``), and the flags that open a port some other way.
+OTHER_WAYS_TO_OPEN_A_PORT = re.compile(r"-p|-P|--publish-all|--publish=|--network|--net|--expose")
 
 
 @pytest.mark.parametrize("script", sorted(PORTS))
@@ -35,8 +38,15 @@ def test_one_port_is_published_on_the_resolved_address(script: str) -> None:
     words = docker_run_words(DEPLOY / script)
     port = PORTS[script]
     assert options(words, "--publish") == [f"${{ADDR}}:{port}:{port}"]
-    assert [w for w in words if w.split("=")[0] in OTHER_WAYS_TO_OPEN_A_PORT] == []
-    assert not [w for w in words if w.startswith("--publish=")]
+    assert [w for w in words if OTHER_WAYS_TO_OPEN_A_PORT.match(w)] == []
+
+
+@pytest.mark.parametrize("word", ["-p", "-p4318:4318", "-P", "--publish=4318:4318", "--net=host"])
+def test_the_check_sees_each_other_spelling(word: str) -> None:
+    """The control: and it must not take ``--publish`` or ``--pids-limit``."""
+    assert OTHER_WAYS_TO_OPEN_A_PORT.match(word)
+    assert not OTHER_WAYS_TO_OPEN_A_PORT.match("--publish")
+    assert not OTHER_WAYS_TO_OPEN_A_PORT.match("--pids-limit")
 
 
 @pytest.mark.parametrize("script", sorted(PORTS))
