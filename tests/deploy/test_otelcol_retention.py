@@ -198,6 +198,78 @@ def test_a_failed_compression_keeps_the_file_and_leaves_no_stamp(data: Path) -> 
     assert time.time() - stamp.stat().st_mtime > 2 * DAY
 
 
+def test_a_rotated_file_the_exporter_deleted_meanwhile_is_skipped(data: Path) -> None:
+    """Past its limit the exporter deletes its oldest rotated file, at any
+    moment. That happens under a flood, which is when the cap matters most,
+    and the run used to stop at the first such file: no prune, no cap, no
+    stamp (CR 7). Here ``zstd`` finds the first file already gone."""
+    first = "events-2026-11-18T00-00-00.000-size.jsonl"
+    _put(data, first)
+    _put(data, ROTATED)
+    bin_dir = data.parent / "bin"
+    bin_dir.mkdir()
+    real = subprocess.run(["which", "zstd"], capture_output=True, text=True).stdout.strip()
+    (bin_dir / "zstd").write_text(
+        "#!/usr/bin/env bash\n"
+        f'for a in "$@"; do [[ $a == */{first} ]] && rm -f "$a"; done\n'
+        f'exec {real} "$@"\n'
+    )
+    (bin_dir / "zstd").chmod(0o755)
+    done = _run(data, path=str(bin_dir))
+    assert done.returncode == 0, done.stderr
+    assert _names(data) == {ARCHIVED}
+    assert (data / STAMP).exists()
+    assert "compressed 1," in done.stdout
+
+
+def test_a_compressed_file_is_600_before_it_has_its_name(data: Path) -> None:
+    """``zstd`` gives its output the source's mode, 644 from the exporter,
+    whatever the umask (CR 17). A reader that finds the file by its final
+    name must never find it open."""
+    _put(data, ROTATED, mode=0o644)
+    bin_dir = data.parent / "bin"
+    bin_dir.mkdir()
+    real = subprocess.run(["which", "mv"], capture_output=True, text=True).stdout.strip()
+    (bin_dir / "mv").write_text(
+        "#!/usr/bin/env bash\n"
+        f'stat -c %a "${{@: -2:1}}" >> "{data.parent}/modes"\n'
+        f'exec {real} "$@"\n'
+    )
+    (bin_dir / "mv").chmod(0o755)
+    assert _run(data, path=str(bin_dir)).returncode == 0
+    assert (data.parent / "modes").read_text().split() == ["600"]
+
+
+def test_without_zstd_it_fails_before_touching_anything(data: Path) -> None:
+    """A rebuilt host without the package: say so at once, not on the first
+    day a file rotates."""
+    copy = data.parent / "otelcol-retention.sh"
+    copy.write_text(SCRIPT.read_text().replace(HOST_DIR, str(data)))
+    empty = data.parent / "empty-bin"
+    empty.mkdir()
+    for tool in (
+        "bash",
+        "find",
+        "install",
+        "sort",
+        "awk",
+        "wc",
+        "touch",
+        "mv",
+        "rm",
+        "chmod",
+        "env",
+    ):
+        found = subprocess.run(["which", tool], capture_output=True, text=True).stdout.strip()
+        (empty / tool).symlink_to(found)
+    done = subprocess.run(
+        [str(empty / "bash"), str(copy)], env={"PATH": str(empty)}, capture_output=True, text=True
+    )
+    assert done.returncode != 0
+    assert "zstd" in done.stderr
+    assert not (data / STAMP).exists()
+
+
 def test_a_half_written_file_from_a_killed_run_is_removed(data: Path) -> None:
     _put(data, f"{ARCHIVED}.tmp", "half")
     _put(data, ROTATED)

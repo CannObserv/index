@@ -27,8 +27,17 @@ KEEP_DAYS=90
 # its 80% alert on 2026-11-20. index-checkin.sh reports at half of it.
 CAP_BYTES=$(( 1024 * 1024 * 1024 ))
 
-# The exporter creates its files 644. Everything written here is 600.
+# The exporter creates its files 644. What is created here is 600, and a
+# compressed file is set so before it has its name: zstd gives its output
+# the source's mode, whatever the umask.
 umask 077
+
+# Before anything is touched: a rebuilt host without the package would
+# otherwise fail only on the first day a file had rotated.
+if ! command -v zstd >/dev/null; then
+  echo "otelcol-retention: zstd is not installed: apt-get install zstd" >&2
+  exit 1
+fi
 
 if [ ! -d "$DIR" ]; then
   echo "otelcol-retention: $DIR missing: otelcol.service creates it at its start" >&2
@@ -39,8 +48,12 @@ install -d -m 700 "$ARCHIVE"
 
 # Regular files in the directory itself, or in the archive, and only by
 # name: a symlink is never followed and no other subdirectory entered.
-own() { find "$DIR" -maxdepth 1 -type f "$@"; }
-archived() { find "$ARCHIVE" -maxdepth 1 -type f "$@"; }
+#
+# The exporter renames and deletes its files at any moment. Without
+# -ignore_readdir_race, find exits non-zero over a file that went between
+# its listing and its stat, and `set -e` would end the run there.
+own() { find "$DIR" -ignore_readdir_race -maxdepth 1 -type f "$@"; }
+archived() { find "$ARCHIVE" -ignore_readdir_race -maxdepth 1 -type f "$@"; }
 
 # What a run killed mid-compression left behind.
 archived -name '*.jsonl.zst.tmp' -delete
@@ -58,8 +71,19 @@ done < <(own -name '*.jsonl.zst' -print0)
 compressed=0
 while IFS= read -r -d '' file; do
   out="$ARCHIVE/${file##*/}.zst"
-  zstd -q -19 -T1 -f -o "$out.tmp" -- "$file"
-  touch -r "$file" "$out.tmp"
+  if ! zstd -q -19 -T1 -f -o "$out.tmp" -- "$file"; then
+    rm -f -- "$out.tmp"
+    # Past max_backups the exporter deletes its oldest rotated file, which
+    # is the next one here. That is a flood, when the cap below matters
+    # most: skip the file and go on. Any other failure ends the run.
+    [ -e "$file" ] || continue
+    echo "otelcol-retention: zstd failed on $file" >&2
+    exit 1
+  fi
+  # If the source went after it was read, the stream is whole: keep it, with
+  # this run's time as its age.
+  touch -r "$file" "$out.tmp" 2>/dev/null || true
+  chmod 600 "$out.tmp"
   mv "$out.tmp" "$out"
   rm -f -- "$file"
   compressed=$(( compressed + 1 ))

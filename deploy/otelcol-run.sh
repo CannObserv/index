@@ -38,6 +38,7 @@ exec docker run --rm --name otelcol \
   --memory-swap 256m \
   --pids-limit 256 \
   --env GOMEMLIMIT=200MiB \
+  --log-driver json-file \
   --log-opt max-size=10m \
   --log-opt max-file=2 \
   --publish "${ADDR}:4318:4318" \

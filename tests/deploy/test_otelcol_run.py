@@ -91,6 +91,9 @@ def test_its_docker_log_is_bounded() -> None:
     same lines isn't, unless told."""
     opts = dict(o.partition("=")[::2] for o in options(_words(), "--log-opt"))
     assert set(opts) == {"max-size", "max-file"}
+    # Named, not the daemon's default: under another driver these options
+    # are refused, and the container never starts.
+    assert options(_words(), "--log-driver") == ["json-file"]
 
 
 def test_it_mounts_its_config_read_only_and_one_data_directory() -> None:
