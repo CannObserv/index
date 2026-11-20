@@ -141,17 +141,18 @@ def test_compressing_late_does_not_restart_the_clock(data: Path) -> None:
 
 
 def test_over_the_cap_the_oldest_compressed_files_go(data: Path) -> None:
-    """Created newest first: ``find`` lists a small directory in creation
-    order, which would pass for "oldest first" with no sort at all."""
-    for n, age in reversed(list(enumerate((30, 20, 10)))):
-        _sparse(data, f"archive/events-2026-10-0{n}T00-00-00.000-size.jsonl.zst", 400, age)
+    """Eight files of 200 MiB against 1 GiB: exactly the three oldest go.
+    Their ages follow neither their names nor the order they were created
+    in, so no directory order passes for "oldest first" without the sort."""
+    ages = {0: 40, 1: 10, 2: 70, 3: 20, 4: 80, 5: 30, 6: 60, 7: 50}
+    for n, age in ages.items():
+        _sparse(data, f"archive/events-2026-10-0{n}T00-00-00.000-size.jsonl.zst", 200, age)
     done = _run(data)
     assert done.returncode == 0, done.stderr
     assert _names(data) == {
-        "archive/events-2026-10-01T00-00-00.000-size.jsonl.zst",
-        "archive/events-2026-10-02T00-00-00.000-size.jsonl.zst",
+        f"archive/events-2026-10-0{n}T00-00-00.000-size.jsonl.zst" for n in (0, 1, 3, 5, 7)
     }
-    assert "over the cap" in done.stderr
+    assert done.stderr.count("over the cap") == 3
 
 
 def test_under_the_cap_nothing_is_deleted(data: Path) -> None:
