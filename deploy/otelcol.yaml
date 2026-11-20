@@ -213,19 +213,21 @@ exporters:
   # files: the rotation here counts a …-size.jsonl.zst in this directory as
   # one of its backups and deletes all but the newest max_backups.
   #
-  # Rotation is by size only. 4 MB keeps a file's span short, since a file
-  # is pruned whole. 16 rotated files bound what a flood can leave between
-  # retention runs: 2 signals x 17 files x 4 MB = 136 MB.
+  # Rotation is by size only, and a file is pruned whole, so a smaller file
+  # keeps its span short. But under rotation the exporter refuses one export
+  # larger than a file, and a full client batch (512 records, each cut at
+  # 4096 twice) is 4.9 MB: hence 8 MB. 8 rotated files bound what a flood
+  # can leave between retention runs: 2 signals x 9 files x 8 MB = 144 MB.
   file/events:
     path: /var/lib/otelcol/events.jsonl
     rotation:
-      max_megabytes: 4
-      max_backups: 16
+      max_megabytes: 8
+      max_backups: 8
   file/metrics:
     path: /var/lib/otelcol/metrics.jsonl
     rotation:
-      max_megabytes: 4
-      max_backups: 16
+      max_megabytes: 8
+      max_backups: 8
 
 service:
   telemetry:

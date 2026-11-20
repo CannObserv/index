@@ -419,7 +419,7 @@ may not parse as JSON: read it as text.
 | File | What |
 |---|---|
 | `events.jsonl`, `metrics.jsonl` | the active files. One line per export, OTLP/JSON: `{"resourceLogs":[…]}` or `{"resourceMetrics":[…]}` |
-| `events-<UTC>-size.jsonl` | rotated at 4 MB, waiting for the retention run. At most 16 per signal: the exporter deletes the oldest past that |
+| `events-<UTC>-size.jsonl` | rotated at 8 MB, waiting for the retention run. At most 8 per signal: the exporter deletes the oldest past that. One export over 8 MB is refused whole |
 | `archive/events-<UTC>-size.jsonl.zst` | compressed by the retention run: a standard zstd stream, with the rotated file's mtime. In a subdirectory because the exporter deletes, as a backup of its own, any such file left beside the rotated ones |
 | `.retention-ok` | the retention run's stamp, which the check-in reads |
 
@@ -452,7 +452,7 @@ read it with `sudo journalctl -u otelcol-retention -n 5`.
 |---|---|---|
 | `otel:collector` | an empty export to `:4318` wasn't answered `200` | `systemctl status otelcol`, `sudo journalctl -u otelcol -n 50` |
 | `otel:bytes` | the directory is over 512 MiB, half the cap | a client is flooding, or the estimate is wrong. `sudo du -sh /var/lib/otelcol`, then find the sender by `cohort.host` in the newest files. Past 1 GiB the oldest data goes |
-| `otel:retention` | the retention run hasn't succeeded in 36 hours | `systemctl list-timers otelcol-retention.timer`, `sudo journalctl -u otelcol-retention -n 20`. Until it runs, nothing is pruned, and rotated files past the 16th are lost uncompressed |
+| `otel:retention` | the retention run hasn't succeeded in 36 hours | `systemctl list-timers otelcol-retention.timer`, `sudo journalctl -u otelcol-retention -n 20`. Until it runs, nothing is pruned, and rotated files past the 8th are lost uncompressed |
 
 **First install.** Outside a patching window, with `index-inflight.sh` at 0
 (the pull and the start share the host with a client's index run). Qdrant and

@@ -66,7 +66,7 @@ while IFS= read -r -d '' file; do
 done < <(own -name '*-size.jsonl' -print0 | sort -z)
 
 # 2. Prune at 90 days. A file goes whole, 90 days after its last write, so a
-#    record can outlive that by one file's span: 4 MB (otelcol.yaml).
+#    record can outlive that by one file's span: 8 MB (otelcol.yaml).
 pruned=$(archived -name '*.jsonl.zst' -mmin "+$(( KEEP_DAYS * 24 * 60 ))" -print -delete | wc -l)
 
 # 3. Hold the cap: oldest compressed file first. Never an active file, which

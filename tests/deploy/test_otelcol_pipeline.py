@@ -805,6 +805,22 @@ def test_traces_have_no_pipeline(collector: Collector) -> None:
     assert collector.post("traces", {})[0] == 404
 
 
+def test_a_full_client_batch_is_written(tmp_path: Path) -> None:
+    """Under rotation the exporter refuses one export larger than a file.
+    Claude Code sends up to 512 records at once, and a Bash record at the
+    4096 cut is about 9.5 kB: 4.9 MB, which a 4 MB file refused whole
+    (CR 6)."""
+    full = _json(full_command="y" * 5000)
+    batch = [
+        _tool_result("Bash", f"full-{n}", tool_parameters=full, tool_input=full) for n in range(512)
+    ]
+    with running(tmp_path) as started:
+        status, answer = started.post("logs", _logs(*batch))
+        assert status == 200, answer
+        started.wait_for(EVENTS, "full-511")
+        assert len(started.raw(EVENTS)) > 4_500_000
+
+
 def test_the_exporter_leaves_the_archive_alone(tmp_path: Path) -> None:
     """``otelcol-retention.sh`` finds rotated files by ``*-size.jsonl``, the
     exporter's naming on 0.165.0, and compresses them into ``archive/``.
@@ -821,7 +837,7 @@ def test_the_exporter_leaves_the_archive_alone(tmp_path: Path) -> None:
     with running(tmp_path, planted=dict.fromkeys(archived, "compressed earlier")) as started:
         filler = _json(full_command="x" * 5000)  # cut to 4096 on the way in
         batch = [_tool_result("Bash", f"fill-{n}", tool_parameters=filler) for n in range(200)]
-        for _ in range(20):  # about 1 MB each: two rotations at least
+        for _ in range(30):  # about 1 MB each: two rotations at least
             assert started.post("logs", _logs(*batch))[0] == 200
         started.post("logs", _logs(_tool_result("Grep", LAST)))
         started.wait_for(EVENTS, LAST)
