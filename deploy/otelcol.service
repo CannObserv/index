@@ -1,0 +1,26 @@
+[Unit]
+Description=OpenTelemetry Collector for the cohort's Claude Code telemetry (D21)
+Documentation=https://github.com/CannObserv/index/issues/33
+Documentation=https://github.com/CannObserv/index/blob/main/docs/plans/2026-09-11-shared-qdrant-vm-design.md
+
+# tailscaled is ORDERING ONLY, for the reason qdrant.service gives at length.
+After=network.target tailscaled.service docker.service
+Requires=docker.service
+
+# [Unit], not [Service]: qdrant.service says why.
+StartLimitBurst=5
+StartLimitIntervalSec=600
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/otelcol-run.sh
+ExecStop=/usr/bin/docker stop --timeout 30 otelcol
+# always, not on-failure: the collector exits 0 on SIGTERM (otelcol-contrib
+# 0.165.0, measured 2026-11-20), so it is Ollama's case (#5): under
+# on-failure an out-of-band `docker stop otelcol` would end the unit for
+# good. An explicit stop never restarts; the start limit bounds a loop.
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

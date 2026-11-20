@@ -13,7 +13,7 @@
     {
       "name": "design-plans",
       "path": "./docs/plans/",
-      "description": "The shared-store design record (decisions D0-D20) and dated implementation plans (directory, indexed recursively)"
+      "description": "The shared-store design record (decisions D0-D22) and dated implementation plans (directory, indexed recursively)"
     },
     {
       "name": "runbook",

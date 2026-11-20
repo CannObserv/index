@@ -1,6 +1,6 @@
 # Observing how the cohort uses the index
 
-**Status:** design, awaiting approval (2026-11-04)
+**Status:** approved (approach A). D21 was recorded on 2026-11-20 (CannObserv/index#33); its row says where the build differs from § Collector
 **Amends:** [2026-09-11-shared-qdrant-vm-design.md](2026-09-11-shared-qdrant-vm-design.md), as D21 once approved
 **Output:** a suite of issues: this repo, gregoryfoster/skills, and each cohort repo
 

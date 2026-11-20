@@ -1,4 +1,5 @@
-"""Drift tests for the long-running units, qdrant.service and ollama.service.
+"""Drift tests for the long-running units: qdrant.service, ollama.service and,
+since D21, otelcol.service.
 
 **A clean stop is a success, and both still restart (#4, #5).** The qdrant
 container exits 128+15 on SIGTERM and ``docker run`` passes that through, so
@@ -8,7 +9,8 @@ but under ``Restart=on-failure`` it would also stop the restart after an
 **out-of-band** SIGTERM (``docker stop qdrant``), which 143 was what triggered.
 Ollama's container exits 0 on SIGTERM, so under ``on-failure`` that same
 out-of-band stop was already final for it. ``Restart=always`` restarts both;
-an explicit stop never restarts under either.
+an explicit stop never restarts under either. The collector exits 0 too
+(otelcol-contrib 0.165.0, measured 2026-11-20), so it is Ollama's case.
 
 **The start limit is read where systemd reads it.** ``StartLimitIntervalSec=``
 is a ``[Unit]`` key. In ``[Service]`` systemd ignores it with a warning, and
@@ -29,7 +31,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = REPO_ROOT / "deploy"
-UNITS = ["qdrant.service", "ollama.service"]
+UNITS = ["qdrant.service", "ollama.service", "otelcol.service"]
 
 
 def _section(unit: str, name: str) -> dict[str, list[str]]:
@@ -89,6 +91,27 @@ def test_start_limit_is_in_unit_section(unit: str) -> None:
     assert unit_keys.get("StartLimitBurst") == ["5"]
     assert unit_keys.get("StartLimitIntervalSec") == ["600"]
     assert not {"StartLimitBurst", "StartLimitIntervalSec"} & _section(unit, "Service").keys()
+
+
+@pytest.mark.parametrize("unit", UNITS)
+def test_docker_is_required_and_tailscaled_only_ordered(unit: str) -> None:
+    """Without dockerd there is no container. tailscaled is ordering alone:
+    a propagating dependency would carry each of its restarts, an apt upgrade
+    included, through to the unit (qdrant.service says why at length)."""
+    unit_keys = _section(unit, "Unit")
+    after = " ".join(unit_keys.get("After", [])).split()
+    assert {"tailscaled.service", "docker.service"} <= set(after)
+    assert unit_keys.get("Requires") == ["docker.service"]
+    assert not {"Wants", "BindsTo", "PartOf"} & unit_keys.keys()
+
+
+@pytest.mark.parametrize("unit", UNITS)
+def test_the_unit_stops_the_container_it_starts(unit: str) -> None:
+    name = unit.removesuffix(".service")
+    service = _section(unit, "Service")
+    assert service.get("ExecStart") == [f"/usr/local/bin/{name}-run.sh"]
+    assert service.get("ExecStop") == [f"/usr/bin/docker stop --timeout 30 {name}"]
+    assert f"--name {name} " in (DEPLOY / f"{name}-run.sh").read_text()
 
 
 def _ignored_by_systemd(path: Path) -> list[str]:

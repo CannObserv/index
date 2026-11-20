@@ -80,6 +80,33 @@ fi
 days_left=$(( ( $(date -d "$(openssl x509 -in /etc/socraticode/tls/qdrant.crt -noout -enddate | cut -d= -f2)" +%s) - $(date +%s) ) / 86400 ))
 [ "$days_left" -gt 21 ] || add tls cert "certificate expires in ${days_left} day(s)"
 
+# The collector (D21, #33): an empty export, on the port clients send to. It
+# is answered 200 and writes nothing. Down is a finding, never unknown:
+# nothing queues in front of it the way a client's batch does in front of
+# Ollama's embed. curl prints 000 itself when it can't connect.
+ocode=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+  -H 'Content-Type: application/json' -d '{}' "http://${ADDR}:4318/v1/logs") || true
+[ "$ocode" = "200" ] || add otel collector "empty export returned ${ocode:-nothing}"
+
+# Its files. otelcol-retention.sh holds the directory to 1 GiB by deleting
+# the oldest: half of that is five times the design's estimate for 90 days,
+# so a flooding client or a wrong estimate is heard before anything is
+# deleted. This isn't `/`'s headroom, which stays the disk GC's (below).
+OTEL_BYTES_MAX=$(( 512 * 1024 * 1024 ))
+obytes=$(du -sb /var/lib/otelcol 2>/dev/null | cut -f1) || true
+[ "${obytes:-0}" -le "$OTEL_BYTES_MAX" ] \
+  || add otel bytes "$(( obytes / 1048576 )) MiB on disk, over $(( OTEL_BYTES_MAX / 1048576 ))"
+
+# The retention run stamps its success. The timer is daily, so 36 hours is
+# one run missed. Unheard, a dead timer ends the 90-day prune and the cap.
+ostamp=$(stat -c %Y /var/lib/otelcol/.retention-ok 2>/dev/null) || ostamp=0
+ohours=$(( ( $(date +%s) - ostamp ) / 3600 ))
+if [ "$ostamp" -eq 0 ]; then
+  add otel retention "otelcol-retention has never succeeded"
+elif [ "$ohours" -ge 36 ]; then
+  add otel retention "otelcol-retention last succeeded ${ohours} h ago"
+fi
+
 # No headroom check here: a full disk stops an index without stopping a
 # container, so `/` pages on the cohort disk GC's own sensor and monitor,
 # co-index-disk-headroom (#16). One here too would page one disk twice.

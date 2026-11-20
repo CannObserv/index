@@ -1,0 +1,164 @@
+# The collector's pipeline (D21, #33): what co-index keeps of the cohort's
+# Claude Code telemetry, and what never reaches its disk.
+#
+# Installed as /usr/local/share/co-index/otelcol.yaml and mounted read-only by
+# otelcol-run.sh. A change takes effect at otelcol.service's next restart.
+# tests/deploy/test_otelcol_pipeline.py runs this file in the pinned image.
+#
+# KEPT:    tool_result and api_request events, claude_code.active_time.total.
+# DROPPED: every other event and metric, traces (no pipeline: 404), and every
+#          attribute not listed below, at the resource, the scope, the record
+#          and the datapoint. Claude Code puts user.email and the account and
+#          organisation IDs on each record as well as the resource, so each
+#          level is an allowlist, never a list of deletions.
+#
+# error_mode is `propagate` throughout: a statement that fails loses the
+# batch. Under `ignore` it would be skipped, and the record written
+# unfiltered.
+
+receivers:
+  otlp:
+    protocols:
+      # Inside the container. The publish in otelcol-run.sh is what binds the
+      # tailnet address, and only it. No gRPC: clients send http/protobuf.
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Refuses data before the container's 256 MiB limit kills it.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 160
+    spike_limit_mib: 40
+
+  # A condition that holds drops the item. A record with no event.name
+  # compares unequal to both, and goes.
+  filter/keep:
+    error_mode: propagate
+    logs:
+      log_record:
+        - attributes["event.name"] != "tool_result" and attributes["event.name"] != "api_request"
+    metrics:
+      metric:
+        - name != "claude_code.active_time.total"
+
+  transform/keep:
+    error_mode: propagate
+    log_statements:
+      - context: resource
+        statements:
+          - keep_keys(attributes, ["cohort.host", "vcs.repository.name", "app.version"])
+      - context: scope
+        statements:
+          - delete_matching_keys(attributes, ".*")
+      - context: log
+        statements:
+          # The body is whatever the client sent. It becomes the event's name.
+          - set(body, Concat(["claude_code", attributes["event.name"]], "."))
+          # tool_result: its fields that need no content flag, plus
+          # tool_parameters and tool_input. `error`, the full message, goes.
+          - >-
+            keep_keys(attributes, ["event.name", "event.timestamp", "event.sequence",
+            "session.id", "prompt.id", "cohort.host", "vcs.repository.name", "app.version",
+            "tool_name", "tool_use_id", "request_id", "success", "duration_ms", "error_type",
+            "decision_type", "decision_source", "tool_result_size_bytes",
+            "tool_input_size_bytes", "mcp_server_scope", "agent_id", "parent_agent_id",
+            "tool_parameters", "tool_input"])
+            where attributes["event.name"] == "tool_result"
+          - >-
+            keep_keys(attributes, ["event.name", "event.timestamp", "event.sequence",
+            "session.id", "prompt.id", "cohort.host", "vcs.repository.name", "app.version",
+            "model", "cost_usd", "duration_ms", "input_tokens", "output_tokens",
+            "cache_read_tokens", "cache_creation_tokens", "cache_creation_5m_tokens",
+            "cache_creation_1h_tokens", "request_id", "agent_id"])
+            where attributes["event.name"] == "api_request"
+          # Redaction reads strings only, so a structured value goes.
+          - delete_key(attributes, "tool_input") where not IsString(attributes["tool_input"])
+          - delete_key(attributes, "tool_parameters") where not IsString(attributes["tool_parameters"])
+          # tool_input stays for the tools the report reads, and for no
+          # other: Edit, Write and NotebookEdit carry file contents. A record
+          # with no tool_name is not "listed". Task is Agent's legacy name.
+          - >-
+            delete_key(attributes, "tool_input")
+            where attributes["tool_name"] == nil
+            or not IsMatch(attributes["tool_name"],
+            "^(Grep|Glob|Bash|Read|Agent|Task)$|^mcp__(plugin_socraticode_)?socraticode__")
+          # Read: the path alone, as {"file_path":"…"}. Any other shape goes.
+          - >-
+            replace_pattern(attributes["tool_input"],
+            "^\\{.*?(\\x22file_path\\x22:\\x22(?:[^\\x22\\x5c]|\\x5c.)*\\x22).*\\}$", "{$${1}}")
+            where attributes["tool_name"] == "Read"
+          - >-
+            delete_key(attributes, "tool_input")
+            where attributes["tool_name"] == "Read"
+            and not IsMatch(attributes["tool_input"],
+            "^\\{\\x22file_path\\x22:\\x22(?:[^\\x22\\x5c]|\\x5c.)*\\x22\\}$")
+    metric_statements:
+      - context: resource
+        statements:
+          - keep_keys(attributes, ["cohort.host", "vcs.repository.name", "app.version"])
+      - context: scope
+        statements:
+          - delete_matching_keys(attributes, ".*")
+      - context: datapoint
+        statements:
+          - >-
+            keep_keys(attributes, ["type", "session.id", "cohort.host",
+            "vcs.repository.name", "app.version"])
+
+  # Known token shapes, masked in every kept string: the same Bash command
+  # sits in tool_parameters (full_command) and in tool_input. The prefix
+  # stays, so the report sees that a token was there. \x22 is a double quote,
+  # \x27 a single one and \x5c a backslash: a value ends at any of them, since
+  # both attributes are JSON text. Then each value is cut at 4096 characters:
+  # full_command arrives untruncated, and a heredoc is file contents by
+  # another route. Masking comes first, or a cut could leave half a token
+  # that no pattern matches.
+  transform/redact:
+    error_mode: propagate
+    log_statements:
+      - context: log
+        statements:
+          - replace_all_patterns(attributes, "value", "(gh[pousr]_)[A-Za-z0-9]{20,}", "$${1}[REDACTED]")
+          - replace_all_patterns(attributes, "value", "(github_pat_)[A-Za-z0-9_]{20,}", "$${1}[REDACTED]")
+          - replace_all_patterns(attributes, "value", "(sk-ant-)[A-Za-z0-9_-]{8,}", "$${1}[REDACTED]")
+          - replace_all_patterns(attributes, "value", "(tskey-)[A-Za-z0-9_-]{8,}", "$${1}[REDACTED]")
+          - replace_all_patterns(attributes, "value", "(?i)(api-key:[ ]*)[^ \\x22\\x27\\x5c]+", "$${1}[REDACTED]")
+          - replace_all_patterns(attributes, "value", "(?i)((?:bearer|basic)[ ]+)[A-Za-z0-9._~+/=-]{16,}", "$${1}[REDACTED]")
+          - replace_all_patterns(attributes, "value", "(?i)(key[^0-9a-z]{1,8})[0-9a-f]{64,}", "$${1}[REDACTED]")
+          - truncate_all(attributes, 4096)
+
+exporters:
+  # Plain JSONL, one export a line. Not `compression: zstd`: on 0.165.0 that
+  # frames each batch behind a length prefix, which `zstd -d` refuses.
+  # otelcol-retention.sh compresses each rotated file instead, prunes at 90
+  # days and holds the directory's cap.
+  #
+  # Rotation is by size only. 4 MB keeps a file's span short, since a file
+  # is pruned whole. 16 rotated files bound what a flood can leave between
+  # retention runs: 2 signals x 17 files x 4 MB = 136 MB.
+  file/events:
+    path: /var/lib/otelcol/events.jsonl
+    rotation:
+      max_megabytes: 4
+      max_backups: 16
+  file/metrics:
+    path: /var/lib/otelcol/metrics.jsonl
+    rotation:
+      max_megabytes: 4
+      max_backups: 16
+
+service:
+  telemetry:
+    # No listener of the collector's own (:8888 by default).
+    metrics:
+      level: none
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/keep, transform/keep, transform/redact]
+      exporters: [file/events]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/keep, transform/keep]
+      exporters: [file/metrics]

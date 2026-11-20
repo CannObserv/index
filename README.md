@@ -1,6 +1,6 @@
 # index
 
-Deploy surface and operator tooling for **`co-index`**, the CannObserv cohort's shared [SocratiCode](https://github.com/giancarloerra/socraticode) store: Qdrant and Ollama on one tailnet-only VM.
+Deploy surface and operator tooling for **`co-index`**, the CannObserv cohort's shared [SocratiCode](https://github.com/giancarloerra/socraticode) store: Qdrant and Ollama on one tailnet-only VM. It also receives the cohort's Claude Code telemetry, through an OpenTelemetry Collector (D21).
 
 - **Design record:** [docs/plans/2026-09-11-shared-qdrant-vm-design.md](docs/plans/2026-09-11-shared-qdrant-vm-design.md)
 - **Host runbook:** [deploy/README.md](deploy/README.md)

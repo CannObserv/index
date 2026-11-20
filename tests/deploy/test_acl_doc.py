@@ -11,7 +11,18 @@ this asserts the docs, not that convention.
 
 **D17 is the store's client list of record, and both blocks agree with it.**
 The live policy opened ``:6333,11434`` to every cohort VM while the docs named
-four.
+four. It lagged again by #33: eight named, twelve admitted.
+
+**D17 is held to what this node sees.** The policy isn't readable from here,
+but a peer is in this node's netmap only through a rule that names both, and
+``tailscale status --json`` gives each peer's tags. Every such rule today is
+the store-client one (``tag:status`` is also the check-in's ``dst``), so on
+co-index the peers' tags are D17's clients. A peer admitted by some other
+rule alone goes in ``NOT_STORE_CLIENTS``, with the rule.
+
+**The collector's port rides the same rule (D21).** ``:4318`` is recorded in
+both blocks before it is live: the live rule gains it at rollout, after the
+pilot (#34). D17 says so, and this checks the documents, not the tailnet.
 
 **Build-phase scaffolding is a block of its own.** D13's ``:22`` edge and
 ``ssh`` block are removed at the end of Phase 3; in the same block as the
@@ -23,6 +34,9 @@ this host. A node's packet filter shows only its inbound rules, as IPs.
 
 import json
 import re
+import shutil
+import socket
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -33,7 +47,10 @@ DESIGN = REPO_ROOT / "docs" / "plans" / "2026-09-11-shared-qdrant-vm-design.md"
 CHECKIN = REPO_ROOT / "deploy" / "index-checkin.sh"
 DOCS = [README, DESIGN]
 BUILD_PHASE = "BUILD PHASE ONLY"
-STORE_DST = "tag:index:6333,11434"
+STORE_DST = "tag:index:6333,11434,4318"
+HOST = "co-index"
+#: Tags of peers this node sees through a rule other than the store-client one.
+NOT_STORE_CLIENTS: set[str] = set()
 
 
 def _blocks(doc: Path) -> list[tuple[str, dict]]:
@@ -94,3 +111,25 @@ def test_build_phase_edge_is_its_own_block(doc: Path) -> None:
     assert len(build) == 1
     assert build[0]["ssh"]
     assert [r["dst"] for r in build[0]["acls"]] == [["tag:index:22"]]
+
+
+def test_the_not_yet_live_port_is_dated_where_it_is_recorded() -> None:
+    """A documented rule ahead of the live one is drift unless it says so,
+    with the issue that closes it."""
+    row = next(ln for ln in DESIGN.read_text().splitlines() if ln.startswith("| **D17**"))
+    assert ":4318" in row and "#34" in row and "not yet live" in row
+
+
+def test_d17_names_every_peer_this_node_sees() -> None:
+    if socket.gethostname() != HOST:
+        pytest.skip(f"not {HOST}")
+    tailscale = shutil.which("tailscale")
+    assert tailscale is not None
+    status = json.loads(
+        subprocess.run(
+            [tailscale, "status", "--json"], capture_output=True, text=True, check=True
+        ).stdout
+    )
+    seen = {tag for peer in status.get("Peer", {}).values() for tag in peer.get("Tags") or []}
+    assert seen, "no tagged peer: tailscaled is down, or the netmap is empty"
+    assert seen - NOT_STORE_CLIENTS == _d17_clients()

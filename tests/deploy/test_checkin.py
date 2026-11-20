@@ -29,6 +29,14 @@ are co-status's credentials, so they are named for it: ``STATUS_API_KEY`` and
   finding mid-fault is heard. The message stays out of it: it carries ages,
   codes and percentages, and would report every tick.
 
+- **The collector's three findings (D21, #33).** ``otel:collector``: an
+  empty export, on the port clients use, wasn't answered 200. Down is a
+  finding, never unknown: nothing queues in front of it, as a client's batch
+  does in front of Ollama's embed. ``otel:bytes``: its directory is over half
+  the cap the retention run holds, so a flood or a wrong estimate is heard
+  before the cap deletes anything. ``otel:retention``: that run hasn't
+  succeeded in 36 hours, which would otherwise end the 90-day prune silently.
+
 The script runs from a copy whose host paths point into ``tmp_path``, with
 ``curl`` and ``openssl`` stubbed on ``PATH``. Nothing leaves the test, and on
 co-index it never touches the live timer's files.
@@ -38,6 +46,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -47,7 +56,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "deploy" / "index-checkin.sh"
 HOST_PATHS = re.compile(
     r"/etc/socraticode/|/usr/local/bin/|/usr/local/share/co-index/|/tmp/index-checkin-"
+    r"|/var/lib/otelcol"
 )
+RETENTION = REPO_ROOT / "deploy" / "otelcol-retention.sh"
+STAMP = ".retention-ok"
+MIB = 1024 * 1024
 
 KEY = "status-key"
 MONITOR = "01MONITORID"
@@ -62,7 +75,10 @@ def _stub(path: Path, body: str) -> None:
 
 @pytest.fixture
 def host(tmp_path: Path) -> Path:
-    """``tmp_path`` laid out as the script's host paths, with no credential file."""
+    """``tmp_path`` laid out as the script's host paths, with no credential
+    file. The collector's directory is there, its retention run just done."""
+    (tmp_path / "otelcol").mkdir()
+    (tmp_path / "otelcol" / STAMP).touch()
     (tmp_path / "etc" / "socraticode").mkdir(parents=True)
     (tmp_path / "etc" / "socraticode" / "qdrant.key").write_text(f"{QDRANT_KEY}\n")
     (tmp_path / "tmp").mkdir()
@@ -82,9 +98,9 @@ def host(tmp_path: Path) -> Path:
     # handed in its environment. The check-in's body arrives on stdin, and is
     # kept, which also drains the pipe into it so it never breaks.
     #
-    # Qdrant and Ollama answer nothing, unless STUB_HEALTHY is set: then
-    # Qdrant answers 200 with its key and 401 without, and Ollama lists the
-    # model.
+    # Qdrant, Ollama and the collector answer nothing, unless STUB_HEALTHY
+    # is set: then Qdrant answers 200 with its key and 401 without, Ollama
+    # lists the model, and the collector answers 200.
     _stub(
         bin_dir / "curl",
         'printf "%s\\n" "$*" >> "$CURL_LOG"\n'
@@ -101,6 +117,8 @@ def host(tmp_path: Path) -> Path:
         'if [[ " $* " == *"/api/tags"* ]]; then\n'
         '  out=; prev=; for a in "$@"; do [[ $prev != -o ]] || out=$a; prev=$a; done\n'
         '  echo \'{"models":[{"name":"nomic-embed-text:latest"}]}\' > "$out"\n'
+        'elif [[ " $* " == *":4318/"* ]]; then\n'
+        "  printf 200\n"
         'elif [[ " $* " == *"%{http_code}"* && " $* " != *"/checkin"* ]]; then\n'
         '  [[ " ${sent[*]} " == *"api-key: "* ]] && printf 200 || printf 401\n'
         "fi\n",
@@ -118,6 +136,7 @@ def _run(host: Path, healthy: bool = False, **env: str) -> subprocess.CompletedP
         "/usr/local/bin/": f"{host}/bin/",
         "/usr/local/share/co-index/": f"{host}/share/",
         "/tmp/index-checkin-": f"{host}/tmp/index-checkin-",
+        "/var/lib/otelcol": f"{host}/otelcol",
     }
     copy = host / "index-checkin.sh"
     copy.write_text(HOST_PATHS.sub(lambda m: local[m.group()], SCRIPT.read_text()))
@@ -313,3 +332,115 @@ def test_a_down_ollama_is_one_finding_not_two(host: Path) -> None:
     assert _run(host).returncode == 0
     assert _fingerprint_calls(host) == []
     assert "ollama:engine" not in _body(host)["metadata"]["fault"]
+
+
+def _fault(host: Path) -> list[str]:
+    return _body(host)["metadata"]["fault"]
+
+
+def _finding(host: Path, key: str) -> dict:
+    [found] = [
+        f for f in _body(host)["variables"]["findings"] if f"{f['check']}:{f['subject']}" == key
+    ]
+    return found
+
+
+def test_the_collector_is_probed_with_an_empty_export_where_clients_send(host: Path) -> None:
+    """The ingest path itself, on the tailnet address, so no second port
+    opens. An empty export is answered and writes nothing
+    (test_otelcol_pipeline.py)."""
+    _write(host, "status.env", STATUS_ENV)
+    assert _run(host, healthy=True).returncode == 0
+    [probe] = [c for c in (host / "curl.log.sent").read_text().splitlines() if ":4318" in c]
+    assert "http://100.64.0.1:4318/v1/logs" in probe
+    assert "-d {}" in probe
+    assert "Content-Type: application/json" in probe
+
+
+def test_a_collector_that_does_not_answer_is_a_finding(host: Path) -> None:
+    _write(host, "status.env", STATUS_ENV)
+    assert _run(host).returncode == 0
+    assert "otel:collector" in _fault(host)
+    assert "empty export" in _finding(host, "otel:collector")["message"]
+
+
+def _threshold() -> int:
+    [mib] = re.findall(
+        r"^OTEL_BYTES_MAX=\$\(\( (\d+) \* 1024 \* 1024 \)\)$", SCRIPT.read_text(), re.M
+    )
+    return int(mib) * MIB
+
+
+def _cap() -> int:
+    [expr] = re.findall(r"^CAP_BYTES=\$\(\(\s*([\d\s*]+)\)\)", RETENTION.read_text(), re.M)
+    total = 1
+    for factor in expr.split("*"):
+        total *= int(factor)
+    return total
+
+
+def test_the_bytes_finding_comes_at_half_the_cap() -> None:
+    """Before the retention run deletes anything to hold it."""
+    assert _threshold() * 2 == _cap()
+
+
+def _fill(host: Path, size: int) -> None:
+    with (host / "otelcol" / "events.jsonl").open("wb") as sparse:
+        sparse.truncate(size)
+
+
+def test_a_directory_over_the_threshold_is_a_finding(host: Path) -> None:
+    _write(host, "status.env", STATUS_ENV)
+    _fill(host, _threshold() + MIB)
+    assert _run(host, healthy=True).returncode == 0
+    assert _fault(host) == ["otel:bytes"]
+    assert f"{_threshold() // MIB + 1} MiB" in _finding(host, "otel:bytes")["message"]
+
+
+def test_a_directory_under_the_threshold_is_not(host: Path) -> None:
+    _write(host, "status.env", STATUS_ENV)
+    _fill(host, _threshold() - MIB)
+    assert _run(host, healthy=True).returncode == 0
+    assert _fault(host) == []
+
+
+def _stamp_age(host: Path, hours: float) -> None:
+    when = time.time() - hours * 3600
+    os.utime(host / "otelcol" / STAMP, (when, when))
+
+
+@pytest.mark.parametrize(("hours", "fault"), [(35, []), (37, ["otel:retention"])])
+def test_a_retention_run_overdue_by_half_a_day_is_a_finding(
+    host: Path, hours: float, fault: list[str]
+) -> None:
+    """The timer is daily, so 36 hours is one run missed, with room for a
+    slow one."""
+    _write(host, "status.env", STATUS_ENV)
+    _stamp_age(host, hours)
+    assert _run(host, healthy=True).returncode == 0
+    assert _fault(host) == fault
+
+
+def test_a_retention_run_that_never_succeeded_is_a_finding(host: Path) -> None:
+    _write(host, "status.env", STATUS_ENV)
+    (host / "otelcol" / STAMP).unlink()
+    assert _run(host, healthy=True).returncode == 0
+    assert _fault(host) == ["otel:retention"]
+    assert "never" in _finding(host, "otel:retention")["message"]
+
+
+def test_a_missing_directory_is_reported_and_the_checkin_still_goes(host: Path) -> None:
+    """Under ``set -e`` and ``pipefail`` a failed ``du`` or ``stat`` would
+    end the script, and the host would go silent over a missing directory."""
+    _write(host, "status.env", STATUS_ENV)
+    (host / "otelcol" / STAMP).unlink()
+    (host / "otelcol").rmdir()
+    result = _run(host, healthy=True)
+    assert result.returncode == 0, result.stderr
+    assert _fault(host) == ["otel:retention"]
+
+
+def test_the_checkin_is_ordered_after_the_collector() -> None:
+    unit = (REPO_ROOT / "deploy" / "index-checkin.service").read_text()
+    [after] = re.findall(r"^After=(.*)$", unit, re.M)
+    assert {"qdrant.service", "ollama.service", "otelcol.service"} <= set(after.split())

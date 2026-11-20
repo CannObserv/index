@@ -1,0 +1,10 @@
+[Unit]
+Description=Compress, prune and cap the collector's telemetry files (D21)
+Documentation=https://github.com/CannObserv/index/issues/33
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/otelcol-retention.sh
+# zstd -19 on the same two vCPUs as Ollama's embedding (D1).
+Nice=19
+IOSchedulingClass=idle

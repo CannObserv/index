@@ -4,13 +4,13 @@ Be terse. Prefer fragments over full sentences. Skip filler and preamble. Lead w
 
 ## Project Overview
 
-Deploy surface and operator tooling for **`co-index`**, the cohort's shared SocratiCode store: Qdrant (:6333, TLS, API key) and Ollama (:11434) on one VM, used by every cohort repo's `codebase_search`.
+Deploy surface and operator tooling for **`co-index`**, the cohort's shared SocratiCode store: Qdrant (:6333, TLS, API key) and Ollama (:11434) on one VM, used by every cohort repo's `codebase_search`. Since D21 it also receives the cohort's Claude Code telemetry: an OpenTelemetry Collector (:4318, no auth).
 
 **Nothing on a production path depends on it** (D9). An outage degrades search on the cohort's VMs and stops no service.
 
 Moved out of CannObserv/notifier with history (notifier#90, #1). **A bare `#N` in history before that move, or `notifier#N` anywhere, is a notifier issue.** From here on, `#N` means this repo.
 
-Design record, with every decision (D0–D20, D22; D21 is #33's): [docs/plans/2026-09-11-shared-qdrant-vm-design.md](docs/plans/2026-09-11-shared-qdrant-vm-design.md). Host runbook: [deploy/README.md](deploy/README.md).
+Design record, with every decision (D0–D22): [docs/plans/2026-09-11-shared-qdrant-vm-design.md](docs/plans/2026-09-11-shared-qdrant-vm-design.md). Host runbook: [deploy/README.md](deploy/README.md).
 
 <!-- BEGIN socraticode-policy -->
 ## Code Exploration Policy
@@ -63,7 +63,7 @@ uv run pre-commit install   # once per clone
 
 | Path | Role |
 |---|---|
-| `deploy/` | Everything installed on `co-index`: `qdrant.service`/`qdrant-run.sh`, `ollama.service`/`ollama-run.sh`/`ollama-slim/`, `qdrant-cert-renew.*` (D14), `index-checkin.*` (D10/D16) with `engine-fingerprint.*` (D19), `tailnet-bind.sh` (D3), `setup.sh.template` (first boot); for patching (#9), `index-inflight.sh`, `qdrant-recovery.sh`, `apt-preferences.d/tailscale`; Node's apt source and pins (D20) |
+| `deploy/` | Everything installed on `co-index`: `qdrant.service`/`qdrant-run.sh`, `ollama.service`/`ollama-run.sh`/`ollama-slim/`, `qdrant-cert-renew.*` (D14), `index-checkin.*` (D10/D16) with `engine-fingerprint.*` (D19), `tailnet-bind.sh` (D3), `setup.sh.template` (first boot); the collector's `otelcol.service`/`otelcol-run.sh`/`otelcol.yaml` and `otelcol-retention.*` (D21); for patching (#9), `index-inflight.sh`, `qdrant-recovery.sh`, `apt-preferences.d/tailscale`; Node's apt source and pins (D20) |
 | `.skills/patching-hosts` | The `patching-hosts` knob: windows, quiet range, services, health, in-flight gate, Tailscale and NodeSource origins. `datastore qdrant`: `recovery-point.sh` takes Qdrant's snapshot. `recovery`: `qdrant-recovery.sh query`, as `exedev`, through the read-only key (D22). `qdrant-recovery.sh` is for the steps the skill doesn't run, plus `check` after a step |
 | `scripts/install_qdrant_key.sh` | Installs the store's single API key into a *client* repo's `.claude/settings.local.json`. Key on stdin only, atomic 0600 write, refuses a target git would commit |
 | `scripts/qdrant-ro-key.sh` | Mints and rotates Qdrant's read-only key (D22, #40): `qdrant.env` and `/etc/socraticode/qdrant-ro.key` (`0640 root:qdrant-ro`), for `qdrant-recovery.sh query` as the knob user. Root, run from the checkout. Takes effect at Qdrant's next restart: in a window |
@@ -85,13 +85,15 @@ exe.dev VM `co-index` (`pdx`, 2 vCPU / 8 GB / 30 GB, proxy `private`), tailnet n
 |---|---|---|
 | `qdrant.service` | Docker, bound to the tailnet address only (D3) | collections + point counts |
 | `ollama.service` | Docker, slim CPU image, `nomic-embed-text` (D5, D7) | `/api/tags` |
+| `otelcol.service` | Docker, `otelcol-contrib` pinned by digest, OTLP/HTTP `:4318` on the tailnet address only; allowlisted JSONL in `/var/lib/otelcol`, root-only (D21) | the knob's `health` line; `otel:collector` |
+| `otelcol-retention.timer` | daily 03:30 UTC: zstd, 90-day prune, 1 GiB cap | `sudo journalctl -u otelcol-retention`; `otel:retention` |
 | `qdrant-cert-renew.timer` | weekly, `Persistent=true` | `systemctl list-timers` |
 | `index-checkin.timer` | every 10 min → co-status's dead-man's timer (CannObserv/status) | a missed check-in alerts there |
 | `cannobserv-disk-gc.timer` | the cohort disk GC, daily 05:15 UTC (#16). Provisioner's, installed by the `maintaining-host-disk` skill, not from `deploy/` | `sudo journalctl -u cannobserv-disk-gc` |
 | `cannobserv-disk-headroom.timer` | every 10 min, `/` at 85/80 → `co-index-disk-headroom` (CannObserv/status#72) | a missed check-in alerts there |
 | Node 26 (`nodejs`) | not a unit: NodeSource apt, for this repo's own SocratiCode client only. No unit or deploy script runs it (D20) | `bash scripts/nodesource.sh check` |
 
-`qdrant.service` and `ollama.service` are `Requires=docker.service`: **restarting Docker restarts both.**
+`qdrant.service`, `ollama.service` and `otelcol.service` are `Requires=docker.service`: **restarting Docker restarts all three.**
 
 **Where this repo is worked on: `co-index` itself** (D15, which amends D8; D18; D20). One checkout of *this* repo. **Never** a client checkout or a commit to a client repo. Node is for this repo's own SocratiCode client only, and only once `exedev` is out of group `docker` (D20). This host may index `index` and nothing else (D11).
 

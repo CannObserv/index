@@ -11,6 +11,10 @@ git.
 **Nothing on a production path depends on this host** (D9). An outage degrades
 `codebase_search` on the cohort's VMs and stops no service. The degrade is `grep`.
 
+It also receives the cohort's Claude Code telemetry (D21): an OpenTelemetry
+Collector on `:4318`, described under [Collector](#collector). A dead
+collector loses data and stops nothing.
+
 ## Phase 2 — provisioning
 
 ### Operator prerequisites
@@ -30,8 +34,11 @@ presents as a DNS failure rather than a permission denial.
 
 ### ACL
 
-Steady state. The store's clients are every cohort VM (D17); `tag:index` is a
-`src` in one rule, the check-in to co-status (D10, D16).
+Steady state. The store's clients are every cohort VM (D17), and they send
+their telemetry to the collector on `:4318` (D21); `tag:index` is a `src` in
+one rule, the check-in to co-status (D10, D16). **`:4318` is recorded ahead of
+the live policy** (not yet live on 2026-11-20): the live rule gains it at
+rollout, after the pilot (#34).
 
 ```jsonc
 {
@@ -39,8 +46,10 @@ Steady state. The store's clients are every cohort VM (D17); `tag:index` is a
   "acls": [
     { "action": "accept",
       "src": ["tag:notifier", "tag:watcher", "tag:archiver", "tag:replicator",
-              "tag:broker", "tag:status", "tag:observo-primary", "tag:power-map"],
-      "dst": ["tag:index:6333,11434"] },
+              "tag:broker", "tag:status", "tag:observo-primary", "tag:power-map",
+              "tag:processor", "tag:address-validator", "tag:provisioner",
+              "tag:usa-wa"],
+      "dst": ["tag:index:6333,11434,4318"] },
     { "action": "accept", "src": ["tag:index"], "dst": ["tag:status:9000"] }
   ]
 }
@@ -152,10 +161,12 @@ again in ten minutes, a missed renewal window closes for good.
 | `ollama-slim/Dockerfile` | CPU-only Ollama, 221 MB against 9.19 GB, embeddings bitwise identical to the stock image (CannObserv/replicator#88). Its base is pinned to a version and a digest (#11): changing it is an [engine change](#engine-change). |
 | `qdrant.service`, `ollama.service` | the long-running units. A clean `systemctl stop qdrant` records success (`SuccessExitStatus=143`) and an out-of-band SIGTERM (`docker stop qdrant`) still restarts it (`Restart=always`, #4). Ollama exits 0 on SIGTERM and has `Restart=always` for the same case (#5). Stop either with `systemctl stop`, which never restarts. The start limit sits in `[Unit]`, the only place systemd reads it. |
 | `qdrant-run.sh`, `ollama-run.sh` | their `ExecStart=`: `docker run` with the publish bound to the tailnet address only (D3). Qdrant's image is pinned to a version and a digest, with telemetry off (#13): changing it is a [Qdrant upgrade](#qdrant-upgrade). |
-| `tailnet-bind.sh` | prints this node's tailnet address, waiting up to 60 s for `tailscaled` to assign one. Called by both run scripts and the check-in. |
+| `otelcol.service`, `otelcol-run.sh`, `otelcol.yaml` | the telemetry collector (D21, #33): its unit, its `ExecStart=` and its pipeline. The image is pinned to a version and a digest: changing it is a [collector update](#collector). The config is mounted read-only from `/usr/local/share/co-index/otelcol.yaml`. |
+| `otelcol-retention.{sh,service,timer}` | daily at 03:30 UTC, `Persistent=true`: compresses the collector's rotated files with zstd, prunes at 90 days, holds the directory to 1 GiB, sets every file `0600`, and stamps its success for the check-in. See [Collector](#collector). |
+| `tailnet-bind.sh` | prints this node's tailnet address, waiting up to 60 s for `tailscaled` to assign one. Called by the three run scripts and the check-in. |
 | `qdrant-cert-renew.{sh,service,timer}` | weekly TLS renewal (D14, above). |
-| `index-checkin.{sh,service,timer}` | every 10 min, reports to co-status's dead-man's timer (D10). Its credentials are `STATUS_API_KEY` and `STATUS_MONITOR_ID` in `/etc/socraticode/status.env` (`0600 root:root`, never in git); without either it exits 1 before probing anything (#8). co-status reports a run of `alert` check-ins once, and *has cleared* on the next `ok` (CannObserv/status#28). Each check-in sends its findings' `check:subject` list, in the checks' fixed order, as `metadata.fault`, so a change in the set reports at once rather than waiting for the clear (#10). |
-| `needrestart.conf.d/index.conf` | needrestart lists restarts and never performs them (#2), so an apt run cannot bounce Docker, and Qdrant and Ollama with it. Install it before any apt run (Installing a change, below). `sudo needrestart -m u -r l -b` then prints `Disabling Ubuntu mode` and restarts nothing. |
+| `index-checkin.{sh,service,timer}` | every 10 min, reports to co-status's dead-man's timer (D10). Its credentials are `STATUS_API_KEY` and `STATUS_MONITOR_ID` in `/etc/socraticode/status.env` (`0600 root:root`, never in git); without either it exits 1 before probing anything (#8). co-status reports a run of `alert` check-ins once, and *has cleared* on the next `ok` (CannObserv/status#28). Each check-in sends its findings' `check:subject` list, in the checks' fixed order, as `metadata.fault`, so a change in the set reports at once rather than waiting for the clear (#10). Three findings are the collector's (D21): `otel:collector`, `otel:bytes` and `otel:retention`, each under [Collector](#collector). |
+| `needrestart.conf.d/index.conf` | needrestart lists restarts and never performs them (#2), so an apt run cannot bounce Docker, and Qdrant, Ollama and the collector with it. Install it before any apt run (Installing a change, below). `sudo needrestart -m u -r l -b` then prints `Disabling Ubuntu mode` and restarts nothing. |
 | `engine-fingerprint.{py,json}` | the check-in's engine check (#11). The `.json` holds five probes (code, an artifact label, uppercase XML, a mixed-case and a lowercase query) and the vectors the pinned engine gave them. A probe below cosine 0.99999 is the `ollama:engine` finding. A probe that couldn't be embedded is no finding, because a timeout behind a client's batch isn't drift. Recapture with `python3 -I deploy/engine-fingerprint.py capture http://index.taild0fb76.ts.net:11434 deploy/engine-fingerprint.json`, only as part of an [engine change](#engine-change). |
 | `index-inflight.sh` | the patching knob's `inflight` (#9, #41): prints how many writes Qdrant served and how many batches Ollama embedded in the last 5 min, so a step waits out a client's index run, this host's own included (D20). A batch is an embed request of 10 inputs or more, or of 10 s or more, or 10 inputs since the last request (one still running), or, when none of those counted, 50 inputs in the window from smaller requests (the re-embed gate's `--batch 8` stream); a search is 1 input and the engine fingerprint 5. Ollama's count is #41's: a run can embed for over 5 min between upserts. It reads `qdrant.service`'s and `ollama.service`'s journals, which `exedev` reads through group `adm`, never `docker logs` (#18). It first logs one request in each, Qdrant's unauthenticated with a unique user agent, Ollama's to a unique path nothing serves, and exits 1, printing no count, unless both markers show: a silent log isn't an idle one. It also exits 1 when journald reports dropping either unit's lines in the window, or when Ollama's lines aren't in the format measured. The patching skill records only the exit code: on exit 1, run it by hand, as `exedev`, and its stderr names the cause. |
 | `qdrant-recovery.sh` | Qdrant's recovery point and check for the steps `patching-hosts` doesn't run: a Docker restart, a Qdrant upgrade, an engine change (#9, #30). A patching run takes no snapshot here: the knob's `datastore qdrant` line has `recovery-point.sh` take it. `sudo qdrant-recovery.sh snapshot` writes the point counts and a full snapshot, copied **out of the container** (`--rm` discards its snapshots directory), mode 600, with the sha256 for the owner's off-node copy. `sudo qdrant-recovery.sh check <counts file>` after a step that stopped Qdrant: fails on a collection gone or emptied, or a real query with no hits. A list or count call that fails stops it there, naming the call, and curl's exit when curl failed, never as a loss (#43). A patching run's counts file, from its recovery point, works too, and adds the real query the skill's check doesn't run. The query's embed waits `EMBED_T` seconds (60), up to 3 tries on a timeout only: Ollama serialises embeds, so a client's index run can queue it. Set it after `sudo` (`sudo EMBED_T=180 qdrant-recovery.sh check …`): `EMBED_T=180 sudo …` loses it to sudo's `env_reset`, and the check runs at 60 s. `qdrant-recovery.sh query`, with no `sudo`, is a search alone (#40), for the knob user, through the [read-only key](#read-only-key). It takes no counts file. It picks the largest `codebase_` collection by its info's `points_count`, scrolls one point with its stored vector, and searches with that vector. It calls no Ollama (#46): a client's index run holds Ollama's one queue for minutes, and the line used to fail on a healthy Qdrant. `ollama.service` has its own `health` line, and `check` still embeds. It keeps to 20 s of limits under a knob command's 60 (`timeout -k 10 60`): the list and the info calls share 10 s, 5 s at most a call, then the scroll has 5 s and the search 5 s. Exit 0 means the scrolled point came back at the top. A tie at the top score counts, because duplicate chunks share a vector. An empty collection, a point with no stored vector, or a search that ranks another point first fails by name. |
@@ -201,9 +212,9 @@ image's bundle and fails on any root it lists as distrusted. Then restart
 vectors, not image IDs.
 
 Docker loads its own roots once per process, so after a host store fix,
-**restart `docker.service` before any pull**. That restarts `qdrant` and
-`ollama` too (`Requires=docker.service`): take `qdrant-recovery.sh snapshot`
-first and run `check` after.
+**restart `docker.service` before any pull**. That restarts `qdrant`,
+`ollama` and `otelcol` too (`Requires=docker.service`): take
+`qdrant-recovery.sh snapshot` first and run `check` after.
 
 **Measured on this host, 2026-09-11**, reproducing replicator#88 independently:
 9.18 GB → **221 MB**, and against the same volume, model and prompt the two
@@ -246,6 +257,7 @@ from the checkout's root:
 ```bash
 sudo install -m 755 deploy/*.sh deploy/*.py /usr/local/bin/
 sudo install -D -m 644 deploy/engine-fingerprint.json /usr/local/share/co-index/engine-fingerprint.json
+sudo install -D -m 644 deploy/otelcol.yaml /usr/local/share/co-index/otelcol.yaml
 sudo install -m 644 deploy/*.service deploy/*.timer /etc/systemd/system/
 sudo install -D -m 644 deploy/needrestart.conf.d/index.conf /etc/needrestart/conf.d/index.conf
 sudo install -D -m 644 deploy/apt-preferences.d/tailscale /etc/apt/preferences.d/tailscale
@@ -261,8 +273,9 @@ A **new** unit with an `[Install]` section also needs
 `sudo systemctl enable --now <unit>`: installed and loaded, a timer never fires.
 
 `daemon-reload` restarts no container and fires no timer. A changed script
-takes effect at its next start. A change to how Qdrant or Ollama starts
-takes effect at the unit's next restart, which is a separate decision.
+takes effect at its next start. A change to how Qdrant, Ollama or the
+collector starts, `otelcol.yaml` included, takes effect at the unit's next
+restart, which is a separate decision.
 
 `test_installed.py` maps every tracked file in `deploy/` to its install path.
 On co-index it fails on any file that differs, is missing, has the wrong mode
@@ -383,6 +396,100 @@ prefix, then `relativePath` (code) or `context:<name>:<path.normalize(path)>`
 cut at `contextLength` UTF-16 code units. A newer SocratiCode that changes
 any of that fails the gate. That failure is the gate working, not a bug in
 the gate.
+
+## Collector
+
+`otelcol.service` receives the cohort's Claude Code telemetry (D21, #33):
+OTLP/HTTP on `:4318`, on the tailnet address only, with **no ingest auth**
+(D4's terms: the ACL bounds who can send, the port only accepts writes).
+Clients are turned on per VM, in `~/.claude/settings.json`, never from this
+repo: the pilot is #34.
+
+**What it writes.** `tool_result` and `api_request` events, and the
+`claude_code.active_time.total` metric, each through an allowlist of
+attributes. `deploy/otelcol.yaml` is the list, and
+`tests/deploy/test_otelcol_pipeline.py` runs it in the pinned image. Every
+other event, metric and attribute is dropped before the write, traces have no
+pipeline (the port answers 404), and known token shapes are masked. A kept
+value is cut at 4096 characters, so a long `tool_parameters` or `tool_input`
+may not parse as JSON: read it as text.
+
+**Where.** `/var/lib/otelcol`, `0700 root:root`:
+
+| File | What |
+|---|---|
+| `events.jsonl`, `metrics.jsonl` | the active files. One line per export, OTLP/JSON: `{"resourceLogs":[…]}` or `{"resourceMetrics":[…]}` |
+| `events-<UTC>-size.jsonl` | rotated at 4 MB, waiting for the retention run. At most 16 per signal: the exporter deletes the oldest past that |
+| `events-<UTC>-size.jsonl.zst` | compressed by the retention run: a standard zstd stream, with the rotated file's mtime |
+| `.retention-ok` | the retention run's stamp, which the check-in reads |
+
+```bash
+sudo ls -la /var/lib/otelcol
+sudo sh -c 'zstd -dcq /var/lib/otelcol/events-*.jsonl.zst; cat /var/lib/otelcol/events-*-size.jsonl /var/lib/otelcol/events.jsonl' 2>/dev/null | wc -l
+```
+
+**The exporter creates its files `0644`** and has no option for it
+(0.165.0). The directory is what keeps other users out, and
+`otelcol-run.sh` resets it to `0700 root:root` at every start. The retention
+run sets every file `0600`. A copy made elsewhere must not keep `0644`.
+
+**Retention** (`otelcol-retention.timer`, daily 03:30 UTC):
+
+- compresses each rotated file (`zstd -19`), and removes the original;
+- prunes a compressed file 90 days after its last write. A file goes whole,
+  so a record can outlive 90 days by one file's span;
+- holds the directory to **1 GiB** by deleting the oldest compressed files.
+  The estimate is 0.5–1 MB a day compressed for the cohort (45–90 MB for 90
+  days), so the cap is a backstop about 11 times the high end. The pilot's
+  measured sizes replace the estimate (#34).
+
+Run it by hand with `sudo systemctl start otelcol-retention.service`, and
+read it with `sudo journalctl -u otelcol-retention -n 5`.
+
+**The check-in's findings:**
+
+| Finding | Means | Do |
+|---|---|---|
+| `otel:collector` | an empty export to `:4318` wasn't answered `200` | `systemctl status otelcol`, `sudo journalctl -u otelcol -n 50` |
+| `otel:bytes` | the directory is over 512 MiB, half the cap | a client is flooding, or the estimate is wrong. `sudo du -sh /var/lib/otelcol`, then find the sender by `cohort.host` in the newest files. Past 1 GiB the oldest data goes |
+| `otel:retention` | the retention run hasn't succeeded in 36 hours | `systemctl list-timers otelcol-retention.timer`, `sudo journalctl -u otelcol-retention -n 20`. Until it runs, nothing is pruned, and rotated files past the 16th are lost uncompressed |
+
+**First install.** Outside a patching window, with `index-inflight.sh` at 0
+(the pull and the start share the host with a client's index run). Qdrant and
+Ollama don't restart: read their `NRestarts` before and after.
+
+```bash
+sudo docker pull "$(sed -n 's/^  \(otel\/opentelemetry-collector-contrib:.*\)$/\1/p' deploy/otelcol-run.sh)"
+# then the lines under "Installing a change", and:
+sudo systemctl enable --now otelcol.service otelcol-retention.timer
+sudo systemctl start otelcol-retention.service   # the first stamp
+sudo ss -ltnp 'sport = :4318'                     # the tailnet address only
+curl -sf -o /dev/null -w '%{http_code}\n' -H 'Content-Type: application/json' -d '{}' http://index:4318/v1/logs   # 200
+```
+
+Install `index-checkin.sh` with the rest: its first run after that expects
+the collector up and the stamp written, or it reports both.
+
+**Update.** The image is a version and a digest (`otelcol-run.sh`), and a
+patching run never touches it (the knob's `owner` line). Update for a reason:
+a fix, or a CVE in the receiver. There is no storage to migrate, so one step:
+
+1. Pin the new version and its digest in `otelcol-run.sh`. The digest is the
+   tag's multi-platform index, from the registry (`sudo docker buildx
+   imagetools inspect otel/opentelemetry-collector-contrib:<version>`).
+2. `sudo docker pull` it (the line above), then `uv run pytest
+   tests/deploy/test_otelcol_pipeline.py tests/deploy/test_otelcol_run.py`.
+   The pipeline tests run the **new** image with the tracked config: a
+   release that renames an attribute path, a function or the rotated files
+   fails here, before it runs. Read the release's changes to the file
+   exporter and to OTTL either way.
+3. Commit, install, and `sudo systemctl restart otelcol.service`. Clients
+   lose what they send in those seconds, and nothing else (D9).
+4. `uv run pytest tests/deploy/test_installed.py`, the knob's `health` line,
+   and the next check-in.
+
+**Rollback:** the old pin, install, restart. The old image stays on disk
+until `sudo docker image prune` or the disk GC's `docker` tier takes it.
 
 ## Qdrant upgrade
 

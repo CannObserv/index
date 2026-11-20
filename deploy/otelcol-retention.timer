@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily retention for the collector's telemetry files (D21)
+
+[Timer]
+# Before the Monday cert renewal (04:00), the disk GC (05:15) and the
+# patching windows (05:15 on), in the hours clients are quietest.
+OnCalendar=*-*-* 03:30:00 UTC
+# A run missed while the host was down is due at boot: the prune and the cap
+# are promises about what is on disk, not about the schedule.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
