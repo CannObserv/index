@@ -131,8 +131,10 @@ processors:
 exporters:
   # Plain JSONL, one export a line. Not `compression: zstd`: on 0.165.0 that
   # frames each batch behind a length prefix, which `zstd -d` refuses.
-  # otelcol-retention.sh compresses each rotated file instead, prunes at 90
-  # days and holds the directory's cap.
+  # otelcol-retention.sh compresses each rotated file instead, into archive/,
+  # prunes at 90 days and holds the directory's cap. Never beside the rotated
+  # files: the rotation here counts a …-size.jsonl.zst in this directory as
+  # one of its backups and deletes all but the newest max_backups.
   #
   # Rotation is by size only. 4 MB keeps a file's span short, since a file
   # is pruned whole. 16 rotated files bound what a flood can leave between

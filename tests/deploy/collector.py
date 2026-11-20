@@ -99,8 +99,12 @@ class Collector:
         except urllib.error.HTTPError as refused:
             return refused.code, refused.read().decode()
 
-    def files(self) -> list[str]:
-        return _sudo("ls", "-A", str(self.data)).stdout.split()
+    def files(self, sub: str = "") -> list[str]:
+        """The regular files in the data directory, or in ``sub`` under it."""
+        found = _sudo(
+            "find", str(self.data / sub), "-maxdepth", "1", "-type", "f", "-printf", "%f\\n"
+        )
+        return found.stdout.split()
 
     def raw(self, name: str) -> str:
         """``name``'s text in the data directory, or nothing if it isn't there."""
@@ -146,7 +150,9 @@ def running(tmp: Path, planted: dict[str, str] | None = None) -> Iterator[Collec
     try:
         _sudo("install", "-d", "-m", "700", "-o", "root", "-g", "root", str(data))
         for planted_name, content in (planted or {}).items():
-            _sudo("sh", "-c", 'printf %s "$1" > "$2"', "sh", content, str(data / planted_name))
+            target = data / planted_name
+            _sudo("install", "-d", "-m", "700", str(target.parent))
+            _sudo("sh", "-c", 'printf %s "$1" > "$2"', "sh", content, str(target))
         started = subprocess.run([*docker_cmd, "run", "-d", *args], capture_output=True, text=True)
         assert started.returncode == 0, started.stderr
         collector = Collector(_published(docker_cmd, name), data, name, docker_cmd)

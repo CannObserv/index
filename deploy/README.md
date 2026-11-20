@@ -162,7 +162,7 @@ again in ten minutes, a missed renewal window closes for good.
 | `qdrant.service`, `ollama.service` | the long-running units. A clean `systemctl stop qdrant` records success (`SuccessExitStatus=143`) and an out-of-band SIGTERM (`docker stop qdrant`) still restarts it (`Restart=always`, #4). Ollama exits 0 on SIGTERM and has `Restart=always` for the same case (#5). Stop either with `systemctl stop`, which never restarts. The start limit sits in `[Unit]`, the only place systemd reads it. |
 | `qdrant-run.sh`, `ollama-run.sh` | their `ExecStart=`: `docker run` with the publish bound to the tailnet address only (D3). Qdrant's image is pinned to a version and a digest, with telemetry off (#13): changing it is a [Qdrant upgrade](#qdrant-upgrade). |
 | `otelcol.service`, `otelcol-run.sh`, `otelcol.yaml` | the telemetry collector (D21, #33): its unit, its `ExecStart=` and its pipeline. The image is pinned to a version and a digest: changing it is a [collector update](#collector). The config is mounted read-only from `/usr/local/share/co-index/otelcol.yaml`. |
-| `otelcol-retention.{sh,service,timer}` | daily at 03:30 UTC, `Persistent=true`: compresses the collector's rotated files with zstd, prunes at 90 days, holds the directory to 1 GiB, sets every file `0600`, and stamps its success for the check-in. See [Collector](#collector). |
+| `otelcol-retention.{sh,service,timer}` | daily at 03:30 UTC, `Persistent=true`: compresses the collector's rotated files with zstd into `archive/`, prunes at 90 days, holds the directory to 1 GiB, sets every file `0600`, and stamps its success for the check-in. See [Collector](#collector). |
 | `tailnet-bind.sh` | prints this node's tailnet address, waiting up to 60 s for `tailscaled` to assign one. Called by the three run scripts and the check-in. |
 | `qdrant-cert-renew.{sh,service,timer}` | weekly TLS renewal (D14, above). |
 | `index-checkin.{sh,service,timer}` | every 10 min, reports to co-status's dead-man's timer (D10). Its credentials are `STATUS_API_KEY` and `STATUS_MONITOR_ID` in `/etc/socraticode/status.env` (`0600 root:root`, never in git); without either it exits 1 before probing anything (#8). co-status reports a run of `alert` check-ins once, and *has cleared* on the next `ok` (CannObserv/status#28). Each check-in sends its findings' `check:subject` list, in the checks' fixed order, as `metadata.fault`, so a change in the set reports at once rather than waiting for the clear (#10). Three findings are the collector's (D21): `otel:collector`, `otel:bytes` and `otel:retention`, each under [Collector](#collector). |
@@ -420,12 +420,12 @@ may not parse as JSON: read it as text.
 |---|---|
 | `events.jsonl`, `metrics.jsonl` | the active files. One line per export, OTLP/JSON: `{"resourceLogs":[…]}` or `{"resourceMetrics":[…]}` |
 | `events-<UTC>-size.jsonl` | rotated at 4 MB, waiting for the retention run. At most 16 per signal: the exporter deletes the oldest past that |
-| `events-<UTC>-size.jsonl.zst` | compressed by the retention run: a standard zstd stream, with the rotated file's mtime |
+| `archive/events-<UTC>-size.jsonl.zst` | compressed by the retention run: a standard zstd stream, with the rotated file's mtime. In a subdirectory because the exporter deletes, as a backup of its own, any such file left beside the rotated ones |
 | `.retention-ok` | the retention run's stamp, which the check-in reads |
 
 ```bash
 sudo ls -la /var/lib/otelcol
-sudo sh -c 'zstd -dcq /var/lib/otelcol/events-*.jsonl.zst; cat /var/lib/otelcol/events-*-size.jsonl /var/lib/otelcol/events.jsonl' 2>/dev/null | wc -l
+sudo sh -c 'zstd -dcq /var/lib/otelcol/archive/events-*.jsonl.zst; cat /var/lib/otelcol/events-*-size.jsonl /var/lib/otelcol/events.jsonl' 2>/dev/null | wc -l
 ```
 
 **The exporter creates its files `0644`** and has no option for it
@@ -435,7 +435,7 @@ run sets every file `0600`. A copy made elsewhere must not keep `0644`.
 
 **Retention** (`otelcol-retention.timer`, daily 03:30 UTC):
 
-- compresses each rotated file (`zstd -19`), and removes the original;
+- compresses each rotated file (`zstd -19`) into `archive/`, and removes the original;
 - prunes a compressed file 90 days after its last write. A file goes whole,
   so a record can outlive 90 days by one file's span;
 - holds the directory to **1 GiB** by deleting the oldest compressed files.

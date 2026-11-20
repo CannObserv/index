@@ -26,6 +26,7 @@ holds them against a live client.
 """
 
 import json
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -561,20 +562,28 @@ def test_traces_have_no_pipeline(collector: Collector) -> None:
     assert collector.post("traces", {})[0] == 404
 
 
-def test_rotation_names_files_as_the_retention_run_expects(tmp_path: Path) -> None:
+def test_the_exporter_leaves_the_archive_alone(tmp_path: Path) -> None:
     """``otelcol-retention.sh`` finds rotated files by ``*-size.jsonl``, the
-    exporter's naming on 0.165.0, and the exporter must leave the compressed
-    ones alone. A release that renames either breaks retention silently."""
-    old = "events-2026-01-01T00-00-00.000-size.jsonl.zst"
-    with running(tmp_path, planted={old: "compressed earlier"}) as started:
+    exporter's naming on 0.165.0, and compresses them into ``archive/``.
+
+    Not beside them: the exporter's rotation library counts any
+    ``<signal>-<UTC>-size.jsonl.zst`` in its own directory as one of its
+    backups, and deletes all but the newest ``max_backups``. Measured on
+    0.165.0, with 20 such files planted and two rotations: 14 were left. The
+    archive would have been a fortnight, not 90 days (CR 1).
+    """
+    archived = [
+        f"archive/events-2026-10-{day:02d}T00-00-00.000-size.jsonl.zst" for day in range(1, 21)
+    ]
+    with running(tmp_path, planted=dict.fromkeys(archived, "compressed earlier")) as started:
         filler = _json(full_command="x" * 5000)  # cut to 4096 on the way in
         batch = [_tool_result("Bash", f"fill-{n}", tool_parameters=filler) for n in range(200)]
-        for _ in range(6):  # about 1 MB each, against a 4 MB file
+        for _ in range(20):  # about 1 MB each: two rotations at least
             assert started.post("logs", _logs(*batch))[0] == 200
         started.post("logs", _logs(_tool_result("Grep", LAST)))
         started.wait_for(EVENTS, LAST)
+        time.sleep(3)  # the library prunes in the background, after a rotation
         names = started.files()
         rotated = [n for n in names if n.startswith("events-") and n.endswith("-size.jsonl")]
-        assert rotated, names
-        assert old in names
-        assert started.raw(old) == "compressed earlier"
+        assert len(rotated) >= 2, names
+        assert sorted(started.files("archive")) == sorted(a.split("/")[1] for a in archived)

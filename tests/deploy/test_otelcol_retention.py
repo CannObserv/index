@@ -6,6 +6,9 @@ This run, once a day, is the rest of the storage line:
 - **Each rotated file becomes a standard zstd stream** (``zstd -dc`` gives the
   JSONL back), written under another name and renamed, so a reader never
   sees half of one. The exporter's own ``compression: zstd`` isn't that.
+- **It lands in ``archive/``, never beside the rotated file.** The exporter
+  counts a ``…-size.jsonl.zst`` in its own directory as one of its backups
+  and deletes all but the newest few (CR 1, measured on 0.165.0).
 - **A file is pruned 90 days after its last write.** The compressed file
   keeps the rotated file's mtime, so compressing late doesn't restart the
   clock.
@@ -59,6 +62,7 @@ def _run(data: Path, path: str | None = None) -> subprocess.CompletedProcess[str
 
 def _put(data: Path, name: str, content: str = LINES, age_days: float = 0, mode: int = 0o644):
     path = data / name
+    path.parent.mkdir(exist_ok=True)
     path.write_text(content)
     path.chmod(mode)
     when = time.time() - age_days * DAY
@@ -68,6 +72,7 @@ def _put(data: Path, name: str, content: str = LINES, age_days: float = 0, mode:
 
 def _sparse(data: Path, name: str, mib: int, age_days: float) -> Path:
     path = data / name
+    path.parent.mkdir(exist_ok=True)
     with path.open("wb") as handle:
         handle.truncate(mib * MIB)
     when = time.time() - age_days * DAY
@@ -80,7 +85,12 @@ def _mode(path: Path) -> int:
 
 
 def _names(data: Path) -> set[str]:
-    return {p.name for p in data.iterdir()} - {STAMP}
+    """Every file under the directory, relative to it, bar the stamp."""
+    found = {p.relative_to(data).as_posix() for p in data.rglob("*") if not p.is_dir()}
+    return found - {STAMP}
+
+
+ARCHIVED = f"archive/{ROTATED}.zst"
 
 
 def test_the_copy_reaches_no_other_host_path() -> None:
@@ -95,8 +105,8 @@ def test_a_rotated_file_becomes_a_standard_zstd_stream(data: Path) -> None:
     written = rotated.stat().st_mtime
     done = _run(data)
     assert done.returncode == 0, done.stderr
-    assert _names(data) == {f"{ROTATED}.zst"}
-    compressed = data / f"{ROTATED}.zst"
+    assert _names(data) == {ARCHIVED}
+    compressed = data / ARCHIVED
     back = subprocess.run(["zstd", "-dc", str(compressed)], capture_output=True, text=True)
     assert back.stdout == LINES
     assert _mode(compressed) == 0o600
@@ -116,7 +126,7 @@ def test_the_active_files_keep_their_content_and_become_600(data: Path) -> None:
 def test_a_compressed_file_is_pruned_ninety_days_after_its_last_write(
     data: Path, age_days: float, kept: bool
 ) -> None:
-    name = f"{ROTATED}.zst"
+    name = ARCHIVED
     _put(data, name, "zst", age_days=age_days)
     assert _run(data).returncode == 0
     assert (name in _names(data)) is kept
@@ -131,20 +141,22 @@ def test_compressing_late_does_not_restart_the_clock(data: Path) -> None:
 
 
 def test_over_the_cap_the_oldest_compressed_files_go(data: Path) -> None:
-    for n, age in enumerate((30, 20, 10)):
-        _sparse(data, f"events-2026-10-0{n}T00-00-00.000-size.jsonl.zst", 400, age)
+    """Created newest first: ``find`` lists a small directory in creation
+    order, which would pass for "oldest first" with no sort at all."""
+    for n, age in reversed(list(enumerate((30, 20, 10)))):
+        _sparse(data, f"archive/events-2026-10-0{n}T00-00-00.000-size.jsonl.zst", 400, age)
     done = _run(data)
     assert done.returncode == 0, done.stderr
     assert _names(data) == {
-        "events-2026-10-01T00-00-00.000-size.jsonl.zst",
-        "events-2026-10-02T00-00-00.000-size.jsonl.zst",
+        "archive/events-2026-10-01T00-00-00.000-size.jsonl.zst",
+        "archive/events-2026-10-02T00-00-00.000-size.jsonl.zst",
     }
     assert "over the cap" in done.stderr
 
 
 def test_under_the_cap_nothing_is_deleted(data: Path) -> None:
     for n, age in enumerate((30, 20)):
-        _sparse(data, f"events-2026-10-0{n}T00-00-00.000-size.jsonl.zst", 400, age)
+        _sparse(data, f"archive/events-2026-10-0{n}T00-00-00.000-size.jsonl.zst", 400, age)
     assert _run(data).returncode == 0
     assert len(_names(data)) == 2
 
@@ -153,7 +165,7 @@ def test_the_active_file_is_never_deleted_and_the_run_fails(data: Path) -> None:
     """The exporter holds it open: deleting it frees nothing until a restart.
     Its own rotation is what bounds it, so this is a fault to be heard."""
     _sparse(data, "events.jsonl", 1100, 0)
-    _sparse(data, f"{ROTATED}.zst", 10, 5)
+    _sparse(data, ARCHIVED, 10, 5)
     done = _run(data)
     assert done.returncode != 0
     assert _names(data) == {"events.jsonl"}
@@ -186,10 +198,10 @@ def test_a_failed_compression_keeps_the_file_and_leaves_no_stamp(data: Path) -> 
 
 
 def test_a_half_written_file_from_a_killed_run_is_removed(data: Path) -> None:
-    _put(data, f"{ROTATED}.zst.tmp", "half")
+    _put(data, f"{ARCHIVED}.tmp", "half")
     _put(data, ROTATED)
     assert _run(data).returncode == 0
-    assert _names(data) == {f"{ROTATED}.zst"}
+    assert _names(data) == {ARCHIVED}
 
 
 def test_only_the_exporters_own_files_are_touched(data: Path, tmp_path: Path) -> None:
@@ -206,6 +218,19 @@ def test_only_the_exporters_own_files_are_touched(data: Path, tmp_path: Path) ->
     assert (data / "notes.txt").read_text() == "kept"
 
 
+def test_a_compressed_file_left_beside_the_rotated_ones_is_moved(data: Path) -> None:
+    """Whatever put it there, the exporter would delete it as a backup."""
+    _put(data, f"{ROTATED}.zst", "zst", age_days=3)
+    assert _run(data).returncode == 0
+    assert _names(data) == {ARCHIVED}
+
+
+def test_the_archive_is_roots_alone(data: Path) -> None:
+    _put(data, ROTATED)
+    assert _run(data).returncode == 0
+    assert _mode(data / "archive") == 0o700
+
+
 def test_a_missing_directory_fails(data: Path) -> None:
     data.rmdir()
     done = _run(data)
@@ -215,7 +240,7 @@ def test_a_missing_directory_fails(data: Path) -> None:
 
 def test_it_says_what_it_did(data: Path) -> None:
     _put(data, ROTATED)
-    _put(data, "events-2026-08-01T00-00-00.000-size.jsonl.zst", "old", age_days=100)
+    _put(data, "archive/events-2026-08-01T00-00-00.000-size.jsonl.zst", "old", age_days=100)
     done = _run(data)
     assert done.returncode == 0
     assert re.search(
