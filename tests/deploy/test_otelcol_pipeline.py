@@ -11,8 +11,16 @@ and datapoint as well as on the resource, so a list of deletions at one level
 misses them at another, and misses whatever a later release adds.
 
 **It fails closed.** A record with no ``event.name`` is dropped. One with no
-``tool_name`` loses its ``tool_input``. A ``tool_input`` that isn't a string
-is deleted, because redaction only reads strings.
+``tool_name`` loses its ``tool_input``. A value that isn't a scalar is
+deleted whatever its key, because redaction and the cut only read strings: a
+map or a list under ``tool_name`` would carry anything past both (CR 2). A
+key sent twice is one key by the time it is judged.
+
+**Attributes aren't the only way in** (CR 3). A record's severity text and
+event-name field, a scope's name and version, the schema URLs, a metric's
+description and metadata, and a datapoint's exemplars are all written as
+sent unless something blanks them. Trace and span IDs stay: fixed-size
+binary, not text.
 
 **Redaction runs over every kept string,** not ``full_command`` alone: the
 same command sits in ``tool_input`` too.
@@ -102,12 +110,15 @@ def _logs(*records: dict, resource: dict = RESOURCE) -> dict:
         "resourceLogs": [
             {
                 "resource": {"attributes": _attributes(resource)},
+                "schemaUrl": f"https://example.test/{DROP}-resource-schema",
                 "scopeLogs": [
                     {
                         "scope": {
-                            "name": "com.anthropic.claude_code.events",
+                            "name": f"{DROP}-scope-name",
+                            "version": f"{DROP}-scope-version",
                             "attributes": _attributes({"scope.note": f"{DROP}-scope"}),
                         },
+                        "schemaUrl": f"https://example.test/{DROP}-scope-schema",
                         "logRecords": list(records),
                     }
                 ],
@@ -120,9 +131,23 @@ def _record(attributes: dict, body: str | None = None) -> dict:
     name = attributes.get("event.name", "unnamed")
     return {
         "timeUnixNano": "1795280400000000000",
+        "severityText": f"{DROP}-severity",
+        "eventName": f"{DROP}-event-name-field",
         "body": {"stringValue": body if body is not None else f"claude_code.{name}"},
         "attributes": _attributes(attributes),
     }
+
+
+def _raw_record(*pairs: tuple[str, dict]) -> dict:
+    """A record from raw key and value pairs: a key twice, or a value no
+    honest client sends."""
+    record = _record({})
+    record["attributes"] = [{"key": k, "value": v} for k, v in pairs]
+    return record
+
+
+def _s(text: str) -> dict:
+    return {"stringValue": text}
 
 
 def _tool_result(tool_name: str | None, tool_use_id: str, **extra: object) -> dict:
@@ -228,6 +253,28 @@ def _corpus() -> list[tuple[str, dict]]:
                     tool_parameters=_json(bash_command="git", full_command=BASH_SECRET_COMMAND),
                     tool_input=_json(command=BASH_SECRET_COMMAND),
                 ),
+                _raw_record(
+                    ("event.name", _s("tool_result")),
+                    ("tool_name", _s("Bash")),
+                    ("tool_use_id", _s("typed-1")),
+                    ("error_type", _value({"nested": f"{DROP}-map {SECRETS['ghp']}"})),
+                    ("request_id", {"arrayValue": {"values": [_s(f"{DROP}-list")]}}),
+                    ("session.id", {"arrayValue": {"values": []}}),
+                ),
+                _raw_record(
+                    ("event.name", _s("tool_result")),
+                    ("tool_name", _s("Bash")),
+                    ("tool_use_id", _s("twice-1")),
+                    ("tool_input", _s(_json(command="first"))),
+                    ("tool_input", _value({"command": f"{DROP}-second-is-a-map"})),
+                ),
+                _raw_record(
+                    ("event.name", _s("tool_result")),
+                    ("tool_name", _s("Write")),
+                    ("tool_use_id", _s("twice-2")),
+                    ("tool_input", _s(f"{DROP}-first")),
+                    ("tool_input", _s(f"{DROP}-second")),
+                ),
                 _tool_result(
                     "Bash",
                     "long-1",
@@ -287,15 +334,35 @@ def _corpus() -> list[tuple[str, dict]]:
             ),
         ),
         ("metrics", _metrics()),
+        ("metrics", _odd_metrics()),
+        (
+            "logs",
+            _logs(
+                _tool_result("Grep", "odd-resource"),
+                resource={
+                    "cohort.host": {"nested": f"{DROP}-resource-map"},
+                    "app.version": "v" * 5000,
+                },
+            ),
+        ),
         ("logs", _logs(_tool_result("Grep", LAST))),
     ]
     return exports
 
 
-def _sum(name: str, value: float, **attributes: object) -> dict:
+def _sum(name: str, value: float, exemplar: bool = True, **attributes: object) -> dict:
+    metric = _sum_with_exemplar(name, value, **attributes)
+    if not exemplar:
+        del metric["sum"]["dataPoints"][0]["exemplars"]
+    return metric
+
+
+def _sum_with_exemplar(name: str, value: float, **attributes: object) -> dict:
     return {
         "name": name,
         "unit": "s",
+        "description": f"{DROP}-description",
+        "metadata": _attributes({"note": f"{DROP}-metadata"}),
         "sum": {
             "aggregationTemporality": 1,
             "isMonotonic": True,
@@ -304,6 +371,13 @@ def _sum(name: str, value: float, **attributes: object) -> dict:
                     "asDouble": value,
                     "timeUnixNano": "1795280400000000000",
                     "attributes": _attributes({**COMMON, **attributes}),
+                    "exemplars": [
+                        {
+                            "asDouble": value,
+                            "timeUnixNano": "1795280400000000000",
+                            "filteredAttributes": _attributes({"user.email": f"{DROP}-exemplar"}),
+                        }
+                    ],
                 }
             ],
         },
@@ -317,9 +391,28 @@ def _metrics() -> dict:
                 "resource": {"attributes": _attributes(RESOURCE)},
                 "scopeMetrics": [
                     {
-                        "scope": {"name": "com.anthropic.claude_code"},
+                        "scope": {
+                            "name": f"{DROP}-meter-name",
+                            "attributes": _attributes({"scope.note": f"{DROP}-meter"}),
+                        },
+                        "schemaUrl": f"https://example.test/{DROP}-meter-schema",
                         "metrics": [
-                            _sum("claude_code.active_time.total", 42.5, type="user"),
+                            _sum(
+                                "claude_code.active_time.total", 42.5, exemplar=False, type="user"
+                            ),
+                            # The same metric, its point carrying an exemplar.
+                            _sum("claude_code.active_time.total", 777.5, type="cli"),
+                            {
+                                # The kept name, as another type: its points
+                                # carry fields a sum's don't.
+                                "name": "claude_code.active_time.total",
+                                "histogram": {
+                                    "aggregationTemporality": 1,
+                                    "dataPoints": [
+                                        {"count": "1", "sum": 987654.5, "timeUnixNano": "1"}
+                                    ],
+                                },
+                            },
                             _sum("claude_code.cost.usage", 1.5, model=f"{DROP}-cost"),
                             _sum("claude_code.token.usage", 99, type=f"{DROP}-tokens"),
                             _sum("claude_code.session.count", 1, start_type=f"{DROP}-session"),
@@ -327,6 +420,25 @@ def _metrics() -> dict:
                         ],
                     }
                 ],
+            }
+        ]
+    }
+
+
+def _odd_metrics() -> dict:
+    """The kept metric, with a map where a scalar belongs: on the resource,
+    and on the point."""
+    point = _sum("claude_code.active_time.total", 5.25, exemplar=False)
+    point["sum"]["dataPoints"][0]["attributes"] = _attributes(
+        {"type": {"nested": f"{DROP}-point-map"}, "session.id": "session-odd"}
+    )
+    return {
+        "resourceMetrics": [
+            {
+                "resource": {
+                    "attributes": _attributes({"cohort.host": {"nested": f"{DROP}-resource-map"}})
+                },
+                "scopeMetrics": [{"scope": {}, "metrics": [point]}],
             }
         ]
     }
@@ -488,9 +600,46 @@ def test_the_resource_keeps_host_repository_and_version(collector: Collector) ->
         for line in collector.lines(name)
         for resource in line[key]
     ]
-    assert resources
     wanted = {"cohort.host": "co-test", "vcs.repository.name": "index", "app.version": "2.1.329"}
-    assert all(r == wanted for r in resources)
+    odd = {"app.version": "v" * 4096}  # its map gone, its long value cut
+    assert wanted in resources and odd in resources and {} in resources
+    assert all(r in (wanted, odd, {}) for r in resources)
+
+
+def test_a_value_that_is_not_a_scalar_goes_whatever_its_key(collector: Collector) -> None:
+    """Redaction and the cut read strings only (CR 2)."""
+    assert _records(collector)["typed-1"]["attributes"] == {
+        "event.name": "tool_result",
+        "tool_name": "Bash",
+        "tool_use_id": "typed-1",
+    }
+
+
+def test_a_key_sent_twice_is_judged_once(collector: Collector) -> None:
+    """The checks read a key's first value and delete its first entry. Sent
+    twice, the second entry was written unchecked (CR 2)."""
+    records = _records(collector)
+    assert records["twice-1"]["attributes"]["tool_input"] == _json(command="first")
+    assert "tool_input" not in records["twice-2"]["attributes"]
+    raw = collector.raw(EVENTS)
+    assert raw.count("twice-1") == 1 and raw.count("twice-2") == 1
+
+
+def test_nothing_rides_outside_the_attributes(collector: Collector) -> None:
+    """Severity, the event-name field, the scope and the schema URLs (CR 3)."""
+    for line in collector.lines(EVENTS):
+        for resource in line["resourceLogs"]:
+            assert not resource.get("schemaUrl")
+            for scope in resource["scopeLogs"]:
+                assert not scope.get("schemaUrl")
+                assert scope.get("scope", {}) == {}
+                for record in scope["logRecords"]:
+                    assert set(record) <= {
+                        "timeUnixNano",
+                        "observedTimeUnixNano",
+                        "body",
+                        "attributes",
+                    }
 
 
 def test_only_active_time_is_kept_of_the_metrics(collector: Collector) -> None:
@@ -501,8 +650,12 @@ def test_only_active_time_is_kept_of_the_metrics(collector: Collector) -> None:
         for scope in resource["scopeMetrics"]
         for metric in scope["metrics"]
     ]
-    assert [m["name"] for m in metrics] == ["claude_code.active_time.total"]
+    assert [m["name"] for m in metrics] == ["claude_code.active_time.total"] * 2
+    [odd] = metrics[1]["sum"]["dataPoints"]
+    assert (odd["asDouble"], _map(odd["attributes"])) == (5.25, {"session.id": "session-odd"})
+    assert set(metrics[0]) == {"name", "unit", "sum"}, "its description and metadata are gone"
     [point] = metrics[0]["sum"]["dataPoints"]
+    assert set(point) == {"attributes", "timeUnixNano", "asDouble"}
     assert point["asDouble"] == 42.5
     assert _map(point["attributes"]) == {
         "type": "user",

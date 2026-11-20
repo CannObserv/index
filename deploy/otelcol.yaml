@@ -12,6 +12,20 @@
 #          organisation IDs on each record as well as the resource, so each
 #          level is an allowlist, never a list of deletions.
 #
+# Two things an allowlist of keys doesn't cover on its own, both measured
+# against this image (2026-11-20):
+#   - A value that isn't a scalar. Masking and the cut read strings only, so
+#     a map or a list under a listed key passed both. `flatten` turns each
+#     into `key.sub` entries, which the keep_keys after it drops. It also
+#     makes one entry of a key sent twice, which the statements here would
+#     otherwise judge by its first value and delete by its first entry.
+#   - Everything that isn't an attribute: a record's severity text and
+#     event-name field, a scope's name and version, the schema URLs, a
+#     metric's description and metadata, a datapoint's exemplars. Each is
+#     blanked below.
+# NOT covered: trace and span IDs (fixed-size binary), a metric's unit, and a
+# bytes value under a listed key. No honest client sends content in them.
+#
 # error_mode is `propagate` throughout: a statement that fails loses the
 # batch. Under `ignore` it would be skipped, and the record written
 # unfiltered.
@@ -40,21 +54,41 @@ processors:
         - attributes["event.name"] != "tool_result" and attributes["event.name"] != "api_request"
     metrics:
       metric:
-        - name != "claude_code.active_time.total"
+        # The one metric, as the sum Claude Code sends: another type under
+        # its name has fields nothing here blanks.
+        - name != "claude_code.active_time.total" or type != METRIC_DATA_TYPE_SUM
+      # An exemplar carries attributes of its own, which no statement here
+      # can reach or clear (0.165.0), so a point that has one goes whole.
+      # Claude Code attaches none to this metric.
+      datapoint:
+        - Len(exemplars) > 0
 
   transform/keep:
     error_mode: propagate
     log_statements:
       - context: resource
         statements:
+          - flatten(attributes)
           - keep_keys(attributes, ["cohort.host", "vcs.repository.name", "app.version"])
+          - truncate_all(attributes, 4096)
+          - set(schema_url, "")
       - context: scope
         statements:
           - delete_matching_keys(attributes, ".*")
+          - set(name, "")
+          - set(version, "")
+          - set(schema_url, "")
       - context: log
         statements:
+          # Before anything reads a key: no nested value, and no key twice.
+          - flatten(attributes)
           # The body is whatever the client sent. It becomes the event's name.
           - set(body, Concat(["claude_code", attributes["event.name"]], "."))
+          - set(severity_text, "")
+          - set(severity_number, 0)
+          - set(event_name, "")
+          - set(flags, 0)
+          - set(dropped_attributes_count, 0)
           # tool_result: its fields that need no content flag, plus
           # tool_parameters and tool_input. `error`, the full message, goes.
           - >-
@@ -96,15 +130,27 @@ processors:
     metric_statements:
       - context: resource
         statements:
+          - flatten(attributes)
           - keep_keys(attributes, ["cohort.host", "vcs.repository.name", "app.version"])
+          - truncate_all(attributes, 4096)
+          - set(schema_url, "")
       - context: scope
         statements:
           - delete_matching_keys(attributes, ".*")
+          - set(name, "")
+          - set(version, "")
+          - set(schema_url, "")
+      - context: metric
+        statements:
+          - set(description, "")
+          - delete_matching_keys(metadata, ".*")
       - context: datapoint
         statements:
+          - flatten(attributes)
           - >-
             keep_keys(attributes, ["type", "session.id", "cohort.host",
             "vcs.repository.name", "app.version"])
+          - truncate_all(attributes, 4096)
 
   # Known token shapes, masked in every kept string: the same Bash command
   # sits in tool_parameters (full_command) and in tool_input. The prefix
