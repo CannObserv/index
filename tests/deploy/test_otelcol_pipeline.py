@@ -785,7 +785,7 @@ def test_a_masked_command_keeps_what_the_report_reads(collector: Collector) -> N
 
 def test_a_long_value_is_cut(collector: Collector) -> None:
     """``full_command`` arrives untruncated, and a heredoc is file contents
-    by another route. 4096 characters keep the command and bound the rest."""
+    by another route. 4096 bytes keep the command and bound the rest."""
     parameters = _records(collector)["long-1"]["attributes"]["tool_parameters"]
     assert len(parameters) == 4096
     assert parameters.startswith('{"full_command":"cat > f <<EOF kkk')

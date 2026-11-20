@@ -410,9 +410,10 @@ repo: the pilot is #34.
 attributes. `deploy/otelcol.yaml` is the list, and
 `tests/deploy/test_otelcol_pipeline.py` runs it in the pinned image. Every
 other event, metric and attribute is dropped before the write, traces have no
-pipeline (the port answers 404), and known token shapes are masked. A kept
-value is cut at 4096 characters, so a long `tool_parameters` or `tool_input`
-may not parse as JSON: read it as text.
+pipeline (the port answers 404), and known token shapes are masked: shapes,
+not secrets, so `user:pass@host` in a URL or a cloud provider's key is written
+as sent. A kept value is cut at 4096 bytes, so a long `tool_parameters` or
+`tool_input` may not parse as JSON: read it as text.
 
 **Where.** `/var/lib/otelcol`, `0700 root:root`:
 
@@ -450,7 +451,7 @@ read it with `sudo journalctl -u otelcol-retention -n 5`.
 
 | Finding | Means | Do |
 |---|---|---|
-| `otel:collector` | an empty export to `:4318` wasn't answered `200` | `systemctl status otelcol`, `sudo journalctl -u otelcol -n 50` |
+| `otel:collector` | an empty export to `:4318` wasn't answered `200`. It proves the listener, not the write: a collector that refuses real exports (its directory unwritable, its memory limiter refusing) still answers an empty one (#47) | `systemctl status otelcol`, `sudo journalctl -u otelcol -n 50` |
 | `otel:bytes` | the directory is over 512 MiB, half the cap | a client is flooding, or the estimate is wrong. `sudo du -sh /var/lib/otelcol`, then find the sender by `cohort.host` in the newest files. Past 1 GiB the oldest data goes |
 | `otel:retention` | the retention run hasn't succeeded in 36 hours | `systemctl list-timers otelcol-retention.timer`, `sudo journalctl -u otelcol-retention -n 20`. Until it runs, nothing is pruned, and rotated files past the 8th are lost uncompressed |
 
@@ -462,17 +463,23 @@ Ollama don't restart: read their `NRestarts` before and after.
 sudo docker pull "$(sed -n 's/^  \(otel\/opentelemetry-collector-contrib:.*\)$/\1/p' deploy/otelcol-run.sh)"
 # then the lines under "Installing a change", and:
 sudo systemctl enable --now otelcol.service otelcol-retention.timer
-sudo systemctl start otelcol-retention.service   # the first stamp
 sudo ss -ltnp 'sport = :4318'                     # the tailnet address only
 curl -sf -o /dev/null -w '%{http_code}\n' -H 'Content-Type: application/json' -d '{}' http://index:4318/v1/logs   # 200
+sudo systemctl start otelcol-retention.service   # the first stamp
 ```
+
+The retention run comes after the `200`: `enable --now` returns before the
+unit has created `/var/lib/otelcol`, and a run that finds no directory fails.
+It needs `zstd`, which the image ships (`initramfs-tools-core` depends on
+it): a host built without it fails the run by name.
 
 Install `index-checkin.sh` with the rest: its first run after that expects
 the collector up and the stamp written, or it reports both.
 
 **Update.** The image is a version and a digest (`otelcol-run.sh`), and a
 patching run never touches it (the knob's `owner` line). Update for a reason:
-a fix, or a CVE in the receiver. There is no storage to migrate, so one step:
+a fix, or a CVE in the receiver. There is no storage to migrate, so it is one
+restart:
 
 1. Pin the new version and its digest in `otelcol-run.sh`. The digest is the
    tag's multi-platform index, from the registry (`sudo docker buildx
@@ -489,7 +496,10 @@ a fix, or a CVE in the receiver. There is no storage to migrate, so one step:
    and the next check-in.
 
 **Rollback:** the old pin, install, restart. The old image stays on disk
-until `sudo docker image prune` or the disk GC's `docker` tier takes it.
+until it is removed by name: pulled by digest it isn't dangling, so neither
+`sudo docker image prune` nor the disk GC's `docker` tier takes it. Once the
+new one has run for a while, `sudo docker rmi
+otel/opentelemetry-collector-contrib@sha256:<old digest>`.
 
 ## Qdrant upgrade
 

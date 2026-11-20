@@ -89,7 +89,7 @@ ocode=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
 [ "$ocode" = "200" ] || add otel collector "empty export returned ${ocode:-nothing}"
 
 # Its files. otelcol-retention.sh holds the directory to 1 GiB by deleting
-# the oldest: half of that is five times the design's estimate for 90 days,
+# the oldest: half of that is over five times the design's estimate for 90 days,
 # so a flooding client or a wrong estimate is heard before anything is
 # deleted. This isn't `/`'s headroom, which stays the disk GC's (below).
 OTEL_BYTES_MAX=$(( 512 * 1024 * 1024 ))

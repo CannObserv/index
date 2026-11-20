@@ -48,7 +48,7 @@ TDD required. Red → Green → Refactor. No production code without a failing t
 
 ## Environment & Tooling
 
-Python ≥3.12, uv ≥0.13.5 (`required-version`, #25), pytest, ruff. No Python package: the tests drive shell scripts as subprocesses.
+Python ≥3.12, uv ≥0.13.5 (`required-version`, #25), pytest, ruff. No Python package: the tests drive shell scripts as subprocesses. `test_otelcol_pipeline.py` also runs the pinned collector image (D21): it needs Docker, passwordless `sudo` and `zstd`, pulls the image once, and fails rather than skips on `co-index` and in CI.
 
 `pre-commit` runs ruff only, never pytest. Only CI (`.github/workflows/ci.yml`: `lint`, `test`) proves correctness.
 

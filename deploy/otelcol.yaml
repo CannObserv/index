@@ -169,7 +169,7 @@ processors:
   # user:pass@host in a URL, `curl -u`, a cloud provider's keys and a PEM
   # block are written as sent. \x22 is a double quote,
   # \x27 a single one and \x5c a backslash: a value ends at any of them, since
-  # both attributes are JSON text. Then each value is cut at 4096 characters:
+  # both attributes are JSON text. Then each value is cut at 4096 bytes:
   # full_command arrives untruncated, and a heredoc is file contents by
   # another route. Masking comes first, or a cut could leave half a token
   # that no pattern matches.

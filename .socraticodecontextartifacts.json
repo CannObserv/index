@@ -18,7 +18,7 @@
     {
       "name": "runbook",
       "path": "./deploy/README.md",
-      "description": "co-index host runbook: provisioning, TLS, installing a change, Node, engine change, Qdrant upgrade"
+      "description": "co-index host runbook: provisioning, TLS, installing a change, Node, engine change, the telemetry collector, Qdrant upgrade"
     },
     {
       "name": "key-install",
