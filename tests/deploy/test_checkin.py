@@ -249,6 +249,20 @@ def _expires_in(host: Path, days: int) -> None:
     _stub(host / "bin" / "openssl", f"echo 'notAfter={when:%b %d %H:%M:%S %Y} GMT'\n")
 
 
+@pytest.mark.parametrize(("days", "alerts"), [(21, True), (22, False)])
+def test_the_cert_finding_opens_under_the_line_plus_a_day(
+    host: Path, days: int, alerts: bool
+) -> None:
+    """Whole days, floored: 21 days 12 hours is 21, inside the line. The renew
+    script's tie to this line counts on it (test_cert_renew.py, CR 1)."""
+    [line] = re.findall(r"^CERT_DAYS_MIN=(\d+)$", SCRIPT.read_text(), re.M)
+    assert int(line) == 21
+    _write(host, "status.env", STATUS_ENV)
+    _expires_in(host, days)
+    assert _run(host, healthy=True).returncode == 0
+    assert ("tls:cert" in _body(host)["metadata"]["fault"]) is alerts
+
+
 def test_an_alert_keys_its_fault_by_check_and_subject(host: Path) -> None:
     """co-status reports an ``alert`` whose ``metadata.fault`` differs from the
     open fault's at once (#10, CannObserv/status#28). Without it, a new finding

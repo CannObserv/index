@@ -28,7 +28,8 @@ before="$(sha256sum "$CRT" | cut -d' ' -f1)"
 #
 # Tied to index-checkin.sh's CERT_DAYS_MIN by tests/deploy/test_cert_renew.py:
 # weekly with an hour's jitter, a renewal lands with between this less 7 days
-# 1 hour and this left, which must stay above that line. And well under the
+# 1 hour and this left, which must stay at or above that line plus a day (the
+# check-in floors to whole days, so it alerts under 22). And well under the
 # CA's lifetime (90 days today): a cert issued with less than this would fail
 # its own test, and every run would issue another.
 MIN_VALIDITY_DAYS=30

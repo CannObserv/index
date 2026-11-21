@@ -183,13 +183,24 @@ def test_the_call_asks_for_the_min_validity(host: Path) -> None:
     assert call.endswith(NAME)
 
 
-def test_the_min_validity_renews_before_the_checkin_alerts() -> None:
+def _renews_before_the_checkin_alerts(min_validity_hours: int) -> bool:
     """A weekly timer with an hour's jitter renews when the certificate has
-    between the min-validity less 7 days and an hour, and the min-validity
-    left. That must stay above the check-in's line, or ``tls:cert`` opens
-    first. The timer is read, so a change to its cadence fails here."""
+    between the min-validity less 7 days 1 hour, and the min-validity, left.
+    The timer is read, so a change to its cadence fails here."""
     timer = TIMER.read_text()
     assert re.search(r"^OnCalendar=Mon \d\d:\d\d$", timer, re.M), "not weekly any more"
     [jitter] = re.findall(r"^RandomizedDelaySec=(\d+)h$", timer, re.M)
-    worst_case = _min_validity_hours() - 7 * 24 - int(jitter)
-    assert worst_case > _checkin_line_hours()
+    worst_case = min_validity_hours - 7 * 24 - int(jitter)
+    # The check-in floors to whole days and alerts unless that is over its
+    # line, so ``tls:cert`` opens with less than CERT_DAYS_MIN + 1 days left.
+    return worst_case >= _checkin_line_hours() + 24
+
+
+def test_the_min_validity_renews_before_the_checkin_alerts() -> None:
+    assert _renews_before_the_checkin_alerts(_min_validity_hours())
+
+
+def test_a_min_validity_a_day_short_is_refused() -> None:
+    """The control: 29 days renews with as little as 21 days 23 hours left,
+    and the check-in has alerted from 22 (CR 1)."""
+    assert not _renews_before_the_checkin_alerts(29 * 24)

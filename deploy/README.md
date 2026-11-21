@@ -148,7 +148,7 @@ this whole issue exists to remove:
 | | |
 |---|---|
 | `qdrant-cert-renew.timer` | weekly, `Persistent=true`. Calls `tailscale cert --min-validity 720h`, and restarts Qdrant **only if the file changed** — a renewed cert that nothing reloaded is indistinguishable from a renewal that worked, until it isn't. |
-| `index-checkin.sh` | reports a cert inside 21 days of expiry (`CERT_DAYS_MIN`) as a finding, so a *stopped renewal timer* becomes an alert rather than a surprise. |
+| `index-checkin.sh` | reports a cert with less than 22 days left as a finding (`CERT_DAYS_MIN=21`, in whole days, floored), so a *stopped renewal timer* becomes an alert rather than a surprise. |
 
 `Persistent=true` here and not on the check-in timer: a missed heartbeat is due
 again in ten minutes, a missed renewal window closes for good.
@@ -160,8 +160,9 @@ saw no change and the renewal waited a week, long enough for `tls:cert` to open
 at 21 days (2026-11-16). With the flag, tailscaled renews **synchronously** when
 less than that is left, and answers from its cache otherwise. The two numbers
 are tied: weekly with an hour's jitter, a renewal lands with between 22 days
-23 hours and 30 days left, above the check-in's 21. `test_cert_renew.py` reads
-the timer and both scripts and fails if a change breaks that. The value must
+23 hours and 30 days left, 23 hours clear of the check-in's alert at 22.
+`test_cert_renew.py` reads the timer and both scripts and fails if a change
+breaks that, and refuses 29 days. The value must
 also stay well under the CA's lifetime (90 days today): a certificate issued
 with less left than the flag asks for fails its own test, and every run would
 issue another.
@@ -173,7 +174,7 @@ issue another.
   720h that is about every 60 days.
 - A failed synchronous renewal (ACME, DNS-01, a rate limit) fails the unit,
   which nothing watches. The next weekly run tries again. If every one fails,
-  the check-in's `tls:cert` opens at 21 days, three weeks before clients fail
+  the check-in's `tls:cert` opens at 22 days, three weeks before clients fail
   verification.
 
 ## Contents
