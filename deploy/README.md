@@ -170,7 +170,7 @@ issue another.
 **Known limits.**
 - A renewal restarts Qdrant when the timer fires, Monday 04:00–05:00 UTC:
   outside the knob's windows, and not gated on `index-inflight.sh`, so a
-  client's index run in that hour sees Qdrant go away for a few seconds. At
+  client's index run in that hour sees Qdrant go away while it restarts. At
   720h that is about every 60 days.
 - A failed synchronous renewal (ACME, DNS-01, a rate limit) fails the unit,
   which nothing watches. One that hangs is killed at `TimeoutStartSec=10min`,
