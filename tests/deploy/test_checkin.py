@@ -305,7 +305,8 @@ def test_a_healthy_host_sends_ok_with_an_empty_fault(host: Path) -> None:
 def test_two_findings_are_counted_as_two(host: Path) -> None:
     """#48: ``grep -c`` counted lines, and the findings are one line, so the
     count and the journal's ``findings=N`` were never more than 1. Measured
-    on 2026-11-20 with exactly these two."""
+    on 2026-11-20 with exactly these two. The journal line is curl's ``-w``
+    format, read from its argv: the stub doesn't print it."""
     _write(host, "status.env", STATUS_ENV)
     _expires_in(host, 5)
     assert _run(host, healthy=True, STUB_OTEL="000:7").returncode == 0
