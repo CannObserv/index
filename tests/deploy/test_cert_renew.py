@@ -161,8 +161,8 @@ def test_a_failed_renewal_fails_the_unit_and_leaves_qdrant_alone(host: Path) -> 
 
 
 def test_the_files_keep_their_modes(host: Path) -> None:
-    """``tailscale cert`` writes by rename: a new file, the key 0600. Qdrant
-    runs as root, so 0640 is for the operator's reading, not Qdrant's."""
+    """``tailscale cert`` writes by rename: a new file, the key 0600. The
+    script's chmods are what keep the modes the setup gave them."""
     assert _run(host, STUB_DAYS_LEFT="25").returncode == 0
     assert (host / "tls" / "qdrant.crt").stat().st_mode & 0o777 == 0o644
     assert (host / "tls" / "qdrant.key").stat().st_mode & 0o777 == 0o640
