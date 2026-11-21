@@ -36,10 +36,14 @@ QURL="https://index.taild0fb76.ts.net:6333"
 # checks run in a fixed order, so the key needs no sort. A finding that clears
 # mid-fault changes the key too: by design that reports the rest at once, and
 # co-status sends no *cleared* for the set it replaces (its spec, F2).
-findings="" fault=""
+# Counted here, not after (#48): the findings are one line, so `grep -c`
+# over them was never more than 1. Not `((count++))`, which returns 1 from 0:
+# under `set -e` the first finding would end the script.
+findings="" fault="" count=0
 add() {
   findings="${findings}${findings:+,}{\"check\":\"$1\",\"subject\":\"$2\",\"message\":\"$3\"}"
   fault="${fault}${fault:+,}\"$1:$2\""
+  count=$(( count + 1 ))
 }
 
 # Qdrant answering AND still refusing an unauthenticated read. A store that
@@ -111,13 +115,6 @@ fi
 # container, so `/` pages on the cohort disk GC's own sensor and monitor,
 # co-index-disk-headroom (#16). One here too would page one disk twice.
 
-# `|| true` is load-bearing, not defensive noise. Under `set -o pipefail` a
-# grep that matches nothing fails the whole pipeline and `set -e` kills the
-# script -- and "matches nothing" is precisely the HEALTHY case. Without this
-# the check-in succeeded only when there was something to complain about, so a
-# perfectly well host would have gone silent and tripped its own dead-man's
-# timer. Found by running this script for the first time on a green host.
-count=$(printf '%s' "$findings" | grep -c '"check"' || true)
 if [ "$count" -eq 0 ]; then status=ok; else status=alert; fi
 
 payload=$(printf '{"status":"%s","variables":{"source":"co-index","finding_count":%s,"findings":[%s]},"metadata":{"fault":[%s]}}' \

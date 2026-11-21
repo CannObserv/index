@@ -288,6 +288,29 @@ def test_a_healthy_host_sends_ok_with_an_empty_fault(host: Path) -> None:
     assert body["metadata"] == {"fault": []}
 
 
+def test_two_findings_are_counted_as_two(host: Path) -> None:
+    """#48: ``grep -c`` counted lines, and the findings are one line, so the
+    count and the journal's ``findings=N`` were never more than 1. Measured
+    on 2026-11-20 with exactly these two."""
+    _write(host, "status.env", STATUS_ENV)
+    _expires_in(host, 5)
+    assert _run(host, healthy=True, STUB_OTEL="000:7").returncode == 0
+    body = _body(host)
+    assert body["metadata"]["fault"] == ["tls:cert", "otel:collector"], "the control"
+    assert body["variables"]["finding_count"] == 2
+    [argv] = [c for c in (host / "curl.log").read_text().splitlines() if "/checkin" in c]
+    assert "sent=alert findings=2" in argv
+
+
+def test_the_count_is_the_number_of_findings(host: Path) -> None:
+    """Everything down: the stubbed Qdrant, Ollama and collector answer nothing."""
+    _write(host, "status.env", STATUS_ENV)
+    assert _run(host).returncode == 0
+    body = _body(host)
+    assert len(body["variables"]["findings"]) > 2, "the control"
+    assert body["variables"]["finding_count"] == len(body["variables"]["findings"])
+
+
 def test_a_full_disk_is_the_disk_gcs_finding_not_this_ones(host: Path) -> None:
     """``/``'s headroom pages on ``co-index-disk-headroom``, the cohort disk GC's
     sensor (#16, CannObserv/status#72). Here too, one disk would page twice."""
