@@ -154,8 +154,8 @@ this whole issue exists to remove:
 again in ten minutes, a missed renewal window closes for good.
 
 **Why `--min-validity` (#49).** Without it, `tailscale cert` returns the cached
-certificate while it is valid and, past two thirds of its life, renews it *in
-the background*: the call returns before the new certificate exists. The script
+certificate while it is valid and, once it is due (in ARI's suggested window,
+else past two thirds of its life), renews it *in the background*: the call returns before the new certificate exists. The script
 saw no change and the renewal waited a week, long enough for `tls:cert` to open
 at 21 days (2026-11-16). With the flag, tailscaled renews **synchronously** when
 less than that is left, and answers from its cache otherwise. The two numbers

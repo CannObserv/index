@@ -19,8 +19,8 @@ KEY=/etc/socraticode/tls/qdrant.key
 before="$(sha256sum "$CRT" | cut -d' ' -f1)"
 
 # Without --min-validity, `tailscale cert` hands back its cached cert while
-# that is still valid, and past two thirds of its life renews it in the
-# BACKGROUND: the call returns first. The script then saw no change and the
+# that is still valid, and once it is due (ARI's window, else two thirds of
+# its life) renews it in the BACKGROUND: the call returns first. The script then saw no change and the
 # new cert waited a week, which let index-checkin's tls:cert open (#49).
 # With it, tailscaled renews synchronously whenever the cached cert has less
 # than this left, and answers from its cache otherwise, so this stays safe to

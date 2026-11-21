@@ -1,11 +1,12 @@
 """Behaviour tests for deploy/qdrant-cert-renew.sh (D14, #49).
 
 ``tailscale cert`` without ``--min-validity`` hands back the cached
-certificate while it is still valid. Past two thirds of its lifetime it also
-starts a renewal *in the background* and returns at once, so the script
-compared too early, logged ``unchanged``, and the new certificate waited a
-week for the next run. On 2026-11-16 that left 25 days on the installed one,
-and the check-in's ``tls:cert`` opened at 21 (#49).
+certificate while it is still valid. Once it is due (in ARI's suggested
+window, else past two thirds of its lifetime) it also starts a renewal *in
+the background* and returns at once, so the script compared too early, logged
+``unchanged``, and the new certificate waited a week for the next run. On
+2026-11-16 that left 25 days on the installed one, and the check-in's
+``tls:cert`` opened on 2026-11-20 (#49).
 
 With ``--min-validity`` tailscaled renews *synchronously* whenever the cached
 certificate has less than that left, and answers from its cache otherwise
@@ -13,8 +14,9 @@ certificate has less than that left, and answers from its cache otherwise
 
 - **The value is tied to the check-in's line.** The timer is weekly with an
   hour's jitter, so a renewal lands when the certificate has between the
-  value less eight days and the value left. That low end must be above the
-  check-in's 21 days, or the alert opens before the run that would renew.
+  value less 7 days 1 hour and the value left. That low end must be at or
+  above the check-in's line plus a day (it floors to whole days), or the
+  alert opens before the run that would renew.
 - **A renewal restarts Qdrant, and nothing else does.** Qdrant reads the
   certificate once, at start.
 
