@@ -5,3 +5,8 @@ After=network.target tailscaled.service
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/qdrant-cert-renew.sh
+# --min-validity makes the call wait for the issuance, which nothing in
+# `tailscale cert` bounds (#49, CR 3). A oneshot's default is no timeout, and
+# the timer can't start a unit that is still active: a hung ACME call would
+# end every later weekly try. 2026-11-16's issuance took 34 s.
+TimeoutStartSec=10min

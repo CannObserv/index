@@ -173,7 +173,8 @@ issue another.
   client's index run in that hour sees Qdrant go away for a few seconds. At
   720h that is about every 60 days.
 - A failed synchronous renewal (ACME, DNS-01, a rate limit) fails the unit,
-  which nothing watches. The next weekly run tries again. If every one fails,
+  which nothing watches. One that hangs is killed at `TimeoutStartSec=10min`,
+  so the timer can start the next. The next weekly run tries again. If every one fails,
   the check-in's `tls:cert` opens at 22 days, three weeks before clients fail
   verification.
 

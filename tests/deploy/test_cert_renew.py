@@ -204,3 +204,17 @@ def test_a_min_validity_a_day_short_is_refused() -> None:
     """The control: 29 days renews with as little as 21 days 23 hours left,
     and the check-in has alerted from 22 (CR 1)."""
     assert not _renews_before_the_checkin_alerts(29 * 24)
+
+
+SERVICE = REPO_ROOT / "deploy" / "qdrant-cert-renew.service"
+
+
+def test_a_hung_renewal_is_bounded_well_inside_a_week() -> None:
+    """With ``--min-validity`` the call waits for the issuance, and nothing in
+    ``tailscale cert`` bounds it. A oneshot's default start timeout is
+    infinite, and a timer does not start a unit that is still active: a hung
+    ACME call would end every later weekly try (CR 3). 2026-11-16's issuance
+    took 34 s."""
+    [service] = re.findall(r"^\[Service\]$(.*?)(?=^\[|\Z)", SERVICE.read_text(), re.M | re.S)
+    [minutes] = re.findall(r"^TimeoutStartSec=(\d+)min$", service, re.M)
+    assert 5 <= int(minutes) <= 30
