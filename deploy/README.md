@@ -147,11 +147,34 @@ this whole issue exists to remove:
 
 | | |
 |---|---|
-| `qdrant-cert-renew.timer` | weekly, `Persistent=true`. Restarts Qdrant **only if the file changed** — a renewed cert that nothing reloaded is indistinguishable from a renewal that worked, until it isn't. |
-| `index-checkin.sh` | reports a cert inside 21 days of expiry as a finding, so a *stopped renewal timer* becomes an alert rather than a surprise. |
+| `qdrant-cert-renew.timer` | weekly, `Persistent=true`. Calls `tailscale cert --min-validity 720h`, and restarts Qdrant **only if the file changed** — a renewed cert that nothing reloaded is indistinguishable from a renewal that worked, until it isn't. |
+| `index-checkin.sh` | reports a cert inside 21 days of expiry (`CERT_DAYS_MIN`) as a finding, so a *stopped renewal timer* becomes an alert rather than a surprise. |
 
 `Persistent=true` here and not on the check-in timer: a missed heartbeat is due
 again in ten minutes, a missed renewal window closes for good.
+
+**Why `--min-validity` (#49).** Without it, `tailscale cert` returns the cached
+certificate while it is valid and, past two thirds of its life, renews it *in
+the background*: the call returns before the new certificate exists. The script
+saw no change and the renewal waited a week, long enough for `tls:cert` to open
+at 21 days (2026-11-16). With the flag, tailscaled renews **synchronously** when
+less than that is left, and answers from its cache otherwise. The two numbers
+are tied: weekly with an hour's jitter, a renewal lands with between 22 days
+23 hours and 30 days left, above the check-in's 21. `test_cert_renew.py` reads
+the timer and both scripts and fails if a change breaks that. The value must
+also stay well under the CA's lifetime (90 days today): a certificate issued
+with less left than the flag asks for fails its own test, and every run would
+issue another.
+
+**Known limits.**
+- A renewal restarts Qdrant when the timer fires, Monday 04:00–05:00 UTC:
+  outside the knob's windows, and not gated on `index-inflight.sh`, so a
+  client's index run in that hour sees Qdrant go away for a few seconds. At
+  720h that is about every 60 days.
+- A failed synchronous renewal (ACME, DNS-01, a rate limit) fails the unit,
+  which nothing watches. The next weekly run tries again. If every one fails,
+  the check-in's `tls:cert` opens at 21 days, three weeks before clients fail
+  verification.
 
 ## Contents
 

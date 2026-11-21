@@ -80,9 +80,11 @@ fi
 # The TLS cert expires in 90 days and qdrant-cert-renew.timer is what keeps it
 # alive. If that timer ever stops, Qdrant keeps serving happily and every
 # CLIENT fails verification instead -- a healthy-looking server and a dead
-# cohort. So the expiry is reported here too, well before it bites.
+# cohort. So the expiry is reported here too, well before it bites. The renew
+# script's MIN_VALIDITY_DAYS renews before this line (test_cert_renew.py).
+CERT_DAYS_MIN=21
 days_left=$(( ( $(date -d "$(openssl x509 -in /etc/socraticode/tls/qdrant.crt -noout -enddate | cut -d= -f2)" +%s) - $(date +%s) ) / 86400 ))
-[ "$days_left" -gt 21 ] || add tls cert "certificate expires in ${days_left} day(s)"
+[ "$days_left" -gt "$CERT_DAYS_MIN" ] || add tls cert "certificate expires in ${days_left} day(s)"
 
 # The collector (D21, #33): an empty export, on the port clients send to. It
 # is answered 200 and writes nothing. Down is a finding, never unknown:

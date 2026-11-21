@@ -18,9 +18,22 @@ KEY=/etc/socraticode/tls/qdrant.key
 
 before="$(sha256sum "$CRT" | cut -d' ' -f1)"
 
-# `tailscale cert` is a no-op well before expiry and re-issues inside the
-# renewal window, so this is safe to run on a cadence.
-tailscale cert --cert-file "$CRT" --key-file "$KEY" "$NAME"
+# Without --min-validity, `tailscale cert` hands back its cached cert while
+# that is still valid, and past two thirds of its life renews it in the
+# BACKGROUND: the call returns first. The script then saw no change and the
+# new cert waited a week, which let index-checkin's tls:cert open (#49).
+# With it, tailscaled renews synchronously whenever the cached cert has less
+# than this left, and answers from its cache otherwise, so this stays safe to
+# run on a cadence.
+#
+# Tied to index-checkin.sh's CERT_DAYS_MIN by tests/deploy/test_cert_renew.py:
+# weekly with an hour's jitter, a renewal lands with between this less 7 days
+# 1 hour and this left, which must stay above that line. And well under the
+# CA's lifetime (90 days today): a cert issued with less than this would fail
+# its own test, and every run would issue another.
+MIN_VALIDITY_DAYS=30
+tailscale cert --min-validity "$(( MIN_VALIDITY_DAYS * 24 ))h" \
+  --cert-file "$CRT" --key-file "$KEY" "$NAME"
 chmod 0644 "$CRT"
 chmod 0640 "$KEY"
 
