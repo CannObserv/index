@@ -233,8 +233,10 @@ def test_test_skips_only_for_an_attested_branch_push_or_human_pr(ctx, runs):
     assert evaluate(_jobs()["test"]["if"], ctx) is runs
 
 
-def test_test_never_runs_in_a_cancelled_run():
-    assert not evaluate(_jobs()["test"]["if"], _ctx("push", "no"), status="cancelled")
+@pytest.mark.parametrize("ctx", [m[1] for m in MATRIX], ids=[m[0] for m in MATRIX])
+def test_test_never_runs_in_a_cancelled_run(ctx):
+    """Every context: `!cancelled() && (a) || (b)` would still run through (b)."""
+    assert not evaluate(_jobs()["test"]["if"], ctx, status="cancelled")
 
 
 def test_test_waits_for_attest_and_survives_its_failure():
