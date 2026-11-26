@@ -33,6 +33,8 @@ DEPENDABOT_UV = (0, 13, 5)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CI = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
+# The one job with no uv (#50): a commit-status read, pinned by test_ci_attestation.py.
+ATTEST_JOB = "attest"
 
 SETUP_UV = "astral-sh/setup-uv"
 _IMMUTABLE = re.compile(r"^v\d+\.\d+\.\d+$|^[0-9a-f]{40}$")
@@ -57,9 +59,20 @@ def _floor(spec: str) -> tuple[int, ...] | None:
 
 
 def test_every_job_sets_up_uv_once() -> None:
-    """Guard the guards: a job without setup-uv is one they never read."""
+    """Guard the guards: a job without setup-uv is one they never read.
+
+    ``attest`` runs no uv, so it sets none up; any other job must.
+    """
     counts = {name: len(_setup_uv_in(job)) for name, job in _jobs().items()}
+    assert counts.pop(ATTEST_JOB, 0) == 0, "attest runs no uv: it reads a commit status"
     assert counts and set(counts.values()) == {1}, f"setup-uv steps per job: {counts}"
+
+
+def test_the_attest_job_runs_no_uv() -> None:
+    """The exemption above holds only while attest never calls uv."""
+    job = _jobs().get(ATTEST_JOB, {})
+    runs = " ".join(str(s.get("run", "")) for s in job.get("steps", []))
+    assert not re.search(r"\buv\b", runs), runs
 
 
 @pytest.mark.parametrize("step", _setup_uv_steps(), ids=lambda s: s["uses"])

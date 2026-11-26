@@ -7,7 +7,10 @@ local gate never checks *less* than CI does. A gate that silently drops a step
 passes a ship that CI then fails, after the push.
 
 - **Its commands are CI's ``run:`` steps, in order.** A drift test, so adding
-  a step to CI without adding it here fails.
+  a step to CI without adding it here fails. The one exception is CI's
+  ``attest`` job (#50): it reads the commit status ``gate/local`` with ``gh``
+  and runs nothing the gate could mirror. ``tests/ci/test_ci_attestation.py``
+  pins what it holds, and the exemption below names it and nothing else.
 - **It stops at the first failure.** A later step passing must not mask an
   earlier one.
 - **It runs from the repo root**, whatever the caller's cwd: ``ruff check .``
@@ -15,26 +18,38 @@ passes a ship that CI then fails, after the push.
 """
 
 import os
-import re
 import stat
 import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "pre-ship.sh"
 CI = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+# CI's one job the gate doesn't mirror (#50): a commit-status read, no uv.
+ATTEST_JOB = "attest"
 
 
-def parse_runs(workflow: str) -> list[str]:
-    """A workflow's ``run:`` steps across jobs, in file order, each command once."""
-    runs = re.findall(r"^\s*(?:-\s+)?run:\s*(.+?)\s*$", workflow, flags=re.MULTILINE)
+def parse_runs(jobs: dict[str, dict]) -> list[str]:
+    """The ``run:`` steps of every job but ``attest``, in file order, each once."""
+    runs = [
+        step["run"].strip()
+        for name, job in jobs.items()
+        if name != ATTEST_JOB
+        for step in job.get("steps", [])
+        if "run" in step
+    ]
     return list(dict.fromkeys(runs))
 
 
+def ci_jobs() -> dict[str, dict]:
+    return yaml.safe_load(CI.read_text())["jobs"]
+
+
 def ci_commands() -> list[str]:
-    return parse_runs(CI.read_text())
+    return parse_runs(ci_jobs())
 
 
 def script_commands() -> list[str]:
@@ -84,25 +99,30 @@ def test_script_exists_and_is_executable():
 def test_the_ci_parser_reads_what_ci_runs():
     """Guards the drift test below against a parser that reads nothing, or reads wrong.
 
-    It reads one-line ``run:`` steps only. A block scalar (``run: |``) would
-    come back as a bare ``|``, so one fails here, naming the cause.
+    The script mirrors one-line commands only, so a multi-line ``run:`` in a
+    mirrored job fails here, naming the cause.
     """
     steps = ci_commands()
     assert "uv run pytest" in steps
-    assert not [s for s in steps if s[0] in "|>"], "block-scalar run: steps are not parsed"
+    assert not [s for s in steps if "\n" in s], "multi-line run: steps can't be mirrored"
 
 
-def test_the_parser_reads_both_step_forms():
-    """A shorthand ``- run:`` step missed here would be a CI step the gate skips."""
-    workflow = (
-        "    steps:\n"
-        "      - name: named\n"
-        "        run: uv run a\n"
-        "      - run: uv run b\n"
-        "      - run: |\n"
-        "          echo c\n"
+def test_the_parser_reads_both_step_forms_and_exempts_only_attest():
+    """A step missed here would be a CI step the gate skips."""
+    jobs = yaml.safe_load(
+        "a:\n"
+        "  steps:\n"
+        "    - name: named\n"
+        "      run: uv run a\n"
+        "    - run: uv run b\n"
+        "attest:\n"
+        "  steps:\n"
+        "    - run: gh api x\n"
+        "attested:\n"
+        "  steps:\n"
+        "    - run: uv run c\n"
     )
-    assert parse_runs(workflow) == ["uv run a", "uv run b", "|"]
+    assert parse_runs(jobs) == ["uv run a", "uv run b", "uv run c"]
 
 
 def test_runs_exactly_what_ci_runs_in_order():
