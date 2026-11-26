@@ -16,7 +16,8 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-  # The clean-runner run every attested commit still gets (attestation.md).
+  # Runs `test` on main's tip at least daily: for an attested commit, the
+  # first clean-runner run of a tree that contains it (attestation.md).
   schedule:
     - cron: "17 6 * * *"
 
