@@ -118,7 +118,7 @@ git config --add credential.https://github.com.helper '!f() { test "$1" = get ||
 2. `git push origin <sha>:refs/heads/main` — the fast-forward. Its push run finds the status already there and skips `test`.
 3. `git push origin --delete <topic>`, then `git pull --ff-only` in the deploy checkout.
 
-Never through the deploy checkout's `main`. A plain push attests nothing, so `test` runs: that's the route for Dependabot's commits ([docs/dependabot.md](docs/dependabot.md)) and the skills hook. **Never post `gate/local` by hand**, and never make it a required status.
+Never through the deploy checkout's `main`. A plain push attests nothing, so `test` runs: that's the route for Dependabot's commits ([docs/dependabot.md](docs/dependabot.md)), the skills hook, and a change whose gate is red on `co-index` only for host state that follows the landing (a `deploy/` change's `test_installed.py` parity; live embed tests while a client index run holds Ollama). Run the rest of the gate with those deselected, push by SHA, read `test` by job, then install. **Never post `gate/local` by hand**, and never make it a required status.
 
 ## Agent Skills
 
