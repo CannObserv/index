@@ -20,8 +20,11 @@ on:
   schedule:
     - cron: "17 6 * * *"
 
+# A schedule and a manual run each get their own group. GitHub keeps one
+# pending run per group and cancels the older, whatever cancel-in-progress
+# says, so a push queued behind one would cancel its clean-runner `test`.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'schedule' && 'schedule' || github.event_name == 'workflow_dispatch' && 'dispatch' || github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:

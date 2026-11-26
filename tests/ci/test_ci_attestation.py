@@ -84,8 +84,11 @@ def _eq(a, b) -> bool:
     return _norm(a) == _norm(b)
 
 
-def evaluate(expr: str, ctx: dict, status: str = "success"):
-    """Evaluate a GitHub `if:` over ``ctx`` (a nested dict; a missing key is null)."""
+def value_of(expr: str, ctx: dict, status: str = "success"):
+    """Evaluate a GitHub expression over ``ctx`` (a nested dict; a missing key is null).
+
+    `&&` and `||` return an operand, as in Actions, so a string-valued
+    expression (a concurrency group) evaluates to its string."""
     expr = expr.strip()
     if expr.startswith("${{") and expr.endswith("}}"):
         expr = expr[3:-2]
@@ -174,7 +177,12 @@ def evaluate(expr: str, ctx: dict, status: str = "success"):
     value = or_()
     if pos != len(toks):
         raise ValueError(f"trailing tokens in {expr!r}: {toks[pos:]}")
-    return bool(value)
+    return value
+
+
+def evaluate(expr: str, ctx: dict, status: str = "success") -> bool:
+    """An `if:`: the value's truthiness, as Actions reads it."""
+    return bool(value_of(expr, ctx, status))
 
 
 def test_the_evaluator_reads_what_actions_reads():
@@ -277,6 +285,34 @@ def test_no_other_job_or_the_workflow_grants_statuses():
     assert _workflow()["permissions"] == {"contents": "read"}
     others = {n: j.get("permissions") for n, j in _jobs().items() if n != ATTEST_JOB}
     assert all(p is None for p in others.values()), others
+
+
+def _group(ctx: dict) -> str:
+    """The run's concurrency group, with `github.workflow` taken as `CI`."""
+    raw = _workflow()["concurrency"]["group"]
+    return re.sub(r"\$\{\{(.*?)\}\}", lambda m: str(value_of(m.group(1), ctx)), raw).replace(
+        "None", ""
+    )
+
+
+def _gctx(event: str, ref: str = "refs/heads/main", head_ref: str | None = None) -> dict:
+    github = {"workflow": "CI", "event_name": event, "ref": ref}
+    if head_ref:
+        github["head_ref"] = head_ref
+    return {"github": github}
+
+
+def test_a_push_cannot_cancel_a_pending_schedule_or_dispatch():
+    """GitHub keeps one pending run per group and cancels the older one, whatever
+    cancel-in-progress says: a push queued behind a pending schedule would
+    cancel that day's clean-runner `test`."""
+    push = _group(_gctx("push"))
+    assert _group(_gctx("push")) == push, "main's push runs still queue behind each other"
+    assert _group(_gctx("schedule")) != push
+    assert _group(_gctx("workflow_dispatch")) != push
+    assert _group(_gctx("schedule")) != _group(_gctx("workflow_dispatch"))
+    pr = _gctx("pull_request", ref="refs/pull/7/merge", head_ref="topic")
+    assert _group(pr) not in (push, _group(_gctx("schedule")))
 
 
 def test_a_schedule_runs_test_on_a_clean_runner():
