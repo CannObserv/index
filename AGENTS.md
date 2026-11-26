@@ -50,7 +50,7 @@ TDD required. Red → Green → Refactor. No production code without a failing t
 
 Python ≥3.12, uv ≥0.13.5 (`required-version`, #25), pytest, ruff. No Python package: the tests drive shell scripts as subprocesses. `test_otelcol_pipeline.py` also runs the pinned collector image (D21): it needs Docker, passwordless `sudo` and `zstd`, pulls the image once, and fails rather than skips on `co-index` and in CI.
 
-`pre-commit` runs ruff only, never pytest. Only CI (`.github/workflows/ci.yml`: `lint`, `test`) proves correctness.
+`pre-commit` runs ruff only, never pytest. Only CI (`.github/workflows/ci.yml`: `attest`, `lint`, `test`) proves correctness. For a commit shipped through `push.sh` (`gate/local` = `success`, #50), `test` skips on its push run and proves it on the next unattested run: the daily `schedule`, the skills hook's bump, or a `workflow_dispatch`.
 
 ```bash
 uv sync
@@ -65,6 +65,7 @@ uv run pre-commit install   # once per clone
 |---|---|
 | `deploy/` | Everything installed on `co-index`: `qdrant.service`/`qdrant-run.sh`, `ollama.service`/`ollama-run.sh`/`ollama-slim/`, `qdrant-cert-renew.*` (D14), `index-checkin.*` (D10/D16) with `engine-fingerprint.*` (D19), `tailnet-bind.sh` (D3), `setup.sh.template` (first boot); the collector's `otelcol.service`/`otelcol-run.sh`/`otelcol.yaml` and `otelcol-retention.*` (D21); for patching (#9), `index-inflight.sh`, `qdrant-recovery.sh`, `apt-preferences.d/tailscale`; Node's apt source and pins (D20) |
 | `.skills/patching-hosts` | The `patching-hosts` knob: windows, quiet range, services, health, in-flight gate, Tailscale and NodeSource origins. `datastore qdrant`: `recovery-point.sh` takes Qdrant's snapshot. `recovery`: `qdrant-recovery.sh query`, as `exedev`, through the read-only key (D22). `qdrant-recovery.sh` is for the steps the skill doesn't run, plus `check` after a step |
+| `.skills/attest-local-gate` | `on` (#50): `shipping-work`'s `push.sh` runs `scripts/pre-ship.sh` on the clean, committed tree, pushes, and posts `gate/local` = `success` on the SHA. Read from the commit. Reference: `skills/shipping-work/references/attestation.md` |
 | `scripts/install_qdrant_key.sh` | Installs the store's single API key into a *client* repo's `.claude/settings.local.json`. Key on stdin only, atomic 0600 write, refuses a target git would commit |
 | `scripts/qdrant-ro-key.sh` | Mints and rotates Qdrant's read-only key (D22, #40): `qdrant.env` and `/etc/socraticode/qdrant-ro.key` (`0640 root:qdrant-ro`), for `qdrant-recovery.sh query` as the knob user. Root, run from the checkout. Takes effect at Qdrant's next restart: in a window |
 | `scripts/reembed.py` | Re-embeds the store from its own payloads on an engine change (D19, #11). `--dry-run` is the gate and the drift check; `--apply` rewrites `dense` only. Procedure: deploy/README.md, "Engine change" |
@@ -73,7 +74,7 @@ uv run pre-commit install   # once per clone
 | `tests/deploy/` | Behaviour and drift tests for the above |
 | `.socraticode.json`, `.socraticodeignore`, `.socraticodecontextartifacts.json` | This repo's own SocratiCode client (D20, #18): `projectId: index`, no linked projects, the store's `env` block and the pin in `.claude/settings.json`. Guarded by `tests/ci/test_socraticode_config.py`. Detail: [docs/SOCRATICODE.md](docs/SOCRATICODE.md) |
 | `.github/dependabot.yml` | `github-actions` + `uv` (dev group), weekly, 7-day cooldown (#23). PRs land by fast-forward from a detached worktree, never via the deploy checkout's `main`: [docs/dependabot.md](docs/dependabot.md) |
-| `tests/ci/` | Guards for the Dependabot config, and for where CI and clones get uv (`test_uv_source.py`). `test_dependabot.py` is the `adopting-dependabot` asset: edit its ADAPT block only |
+| `tests/ci/` | Guards for the Dependabot config, for where CI and clones get uv (`test_uv_source.py`), and for the attestation's CI side (`test_ci_attestation.py`: every trigger, attested or not). `test_dependabot.py` is the `adopting-dependabot` asset: edit its ADAPT block only |
 
 **Clients run `install_qdrant_key.sh` from a read-only clone of this repo** (public, no credential), never a copy: its tests pin exactly the properties a copy loses first. Procedure, and rotation: [docs/installing-the-key.md](docs/installing-the-key.md).
 
@@ -111,6 +112,13 @@ git config --add credential.https://github.com.helper '!f() { test "$1" = get ||
 **Dates:** UTC; ISO 8601.
 
 **Cross-repo:** issues only on sibling cohort repos, never commits.
+
+**Landing** (`main` is linear, no PRs merged on GitHub). From a worktree on a topic branch, with `.env` loaded (`gh` posts the status):
+1. `bash /home/exedev/index/skills/shipping-work/scripts/push.sh` — the gate, then the topic branch's push (no CI: `push` is `main`-only), then `gate/local` on the SHA. Exit 1 or 2 pushed nothing.
+2. `git push origin <sha>:refs/heads/main` — the fast-forward. Its push run finds the status already there and skips `test`.
+3. `git push origin --delete <topic>`, then `git pull --ff-only` in the deploy checkout.
+
+Never through the deploy checkout's `main`. A plain push attests nothing, so `test` runs: that's the route for Dependabot's commits ([docs/dependabot.md](docs/dependabot.md)) and the skills hook. **Never post `gate/local` by hand**, and never make it a required status.
 
 ## Agent Skills
 

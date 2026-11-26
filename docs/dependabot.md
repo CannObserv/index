@@ -36,6 +36,11 @@ restarts a service.**
 GitHub. A Dependabot PR lands by pushing its head commit, the exact commit CI
 tested, to `main`. GitHub then marks the PR merged.
 
+**By plain `git push`, never `push.sh`.** The bot's commit carries no
+`gate/local` status, so its PR run and `main`'s push run both run `test`
+(#50). `push.sh` pushes a branch under its own name, and would attest a commit
+whose tests the bot's PR already ran on a runner.
+
 **Never into the deploy checkout's `main`.** The skills `SessionStart` hook
 commits on top of that `main` once a UTC day and pushes everything under its
 commit. A Dependabot commit fast-forwarded there, and not yet pushed, would go
