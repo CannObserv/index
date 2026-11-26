@@ -421,4 +421,11 @@ def test_no_submodule_hides_its_edits():
     `ignore` in .gitmodules is one way; .git/config and skip-worktree or
     assume-unchanged paths are machine-local, and the brief checks them by hand.
     """
-    assert "ignore" not in GITMODULES.read_text(encoding="utf-8")
+    keys = subprocess.run(
+        ["git", "config", "--file", str(GITMODULES), "--name-only", "--list"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert keys, "read nothing from .gitmodules"
+    assert not [k for k in keys if k.endswith(".ignore")], keys
