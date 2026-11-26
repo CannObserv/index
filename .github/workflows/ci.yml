@@ -1,5 +1,13 @@
 # The repo's only automated correctness gate. `pre-commit` runs ruff and
 # nothing else, and this repo commits straight to main.
+#
+# The local-gate attestation (#50, shipping-work's references/attestation.md):
+# a commit shipped through push.sh carries the commit status gate/local =
+# success, posted only after scripts/pre-ship.sh passed on its exact tree.
+# `test` skips for that commit on a branch push or a human, same-repo PR, and
+# runs for everything else: Dependabot's commits, the skills hook's bumps, a
+# manual run and the daily schedule. `lint` always runs. Guarded by
+# tests/ci/test_ci_attestation.py.
 name: CI
 
 on:
@@ -8,6 +16,9 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  # The clean-runner run every attested commit still gets (attestation.md).
+  schedule:
+    - cron: "17 6 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -36,7 +47,43 @@ jobs:
       - name: ruff format --check
         run: uv run ruff format --check .
 
+  # Reads gate/local on the commit, on the two events whose answer can skip
+  # `test`; elsewhere an API error would only fail the run, and an unset
+  # output reads as not attested. On pull_request it reads the PR's head:
+  # github.sha is the merge commit, which nobody gated. The combined status
+  # keeps each context's latest state, a page holds 30 contexts unless more
+  # are asked for, and a refused read fails the step: loud, never a skip.
+  # The verdict goes to the log and the job summary. No comment goes inside
+  # `run:`, and no expression either: inputs come through env.
+  attest:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      statuses: read
+    outputs:
+      attested: ${{ steps.attest.outputs.attested }}
+    steps:
+      - id: attest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          n=$(gh api "repos/$REPO/commits/$HEAD/status?per_page=100" --jq '[.statuses[] | select(.context == "gate/local" and .state == "success")] | length')
+          v=$([ "$n" -gt 0 ] && echo yes || echo no)
+          echo "attested=$v" >>"$GITHUB_OUTPUT"
+          echo "gate/local on $HEAD: attested=$v" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # Skipped only for an attested commit on a branch push or a pull request,
+  # and never for a bot's PR or a fork's. Job-level, so a skip reads
+  # `skipped` by job, never `success`. `!cancelled()` replaces the implicit
+  # success() that `needs` adds, which would skip `test` whenever `attest`
+  # failed or was skipped. One line: a folded block keeps the newlines of
+  # more-indented lines.
   test:
+    needs: attest
+    if: ${{ !cancelled() && (needs.attest.outputs.attested != 'yes' || (github.event_name != 'push' && github.event_name != 'pull_request') || startsWith(github.ref, 'refs/tags/') || (github.event_name == 'pull_request' && (github.event.pull_request.user.type == 'Bot' || github.event.pull_request.head.repo.full_name != github.repository))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
