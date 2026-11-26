@@ -113,8 +113,8 @@ git config --add credential.https://github.com.helper '!f() { test "$1" = get ||
 
 **Cross-repo:** issues only on sibling cohort repos, never commits.
 
-**Landing** (`main` is linear, no PRs merged on GitHub). From a worktree on a topic branch, with `.env` loaded (`gh` posts the status):
-1. `bash /home/exedev/index/skills/shipping-work/scripts/push.sh` — the gate, then the topic branch's push (no CI: `push` is `main`-only), then `gate/local` on the SHA. Exit 1 or 2 pushed nothing.
+**Landing** (`main` is linear, no PRs merged on GitHub). From a worktree on a topic branch, in one shell that ran `set -a; . /home/exedev/index/.env; set +a` (the worktree has no `.env`; `gh` posts the status):
+1. `bash /home/exedev/index/skills/shipping-work/scripts/push.sh` — the gate, then the topic branch's push (no CI: `push` is `main`-only), then `gate/local` on the SHA. Exit 1 or 2 pushed nothing. Go on only after `Attestation: gate/local = success posted`; `ATTESTATION NOT POSTED` is still exit 0, and `test` will run.
 2. `git push origin <sha>:refs/heads/main` — the fast-forward. Its push run finds the status already there and skips `test`.
 3. `git push origin --delete <topic>`, then `git pull --ff-only` in the deploy checkout.
 
