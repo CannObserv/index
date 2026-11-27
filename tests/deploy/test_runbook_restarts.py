@@ -1,11 +1,14 @@
 """The runbook never proves "didn't restart" with ``NRestarts`` (#53).
 
-``NRestarts`` counts only the restarts a unit's ``Restart=`` policy made. A
-``systemctl restart``, a stop and a start, or Docker's restart, which takes
-Qdrant, Ollama and the collector with it (``Requires=docker.service``), leaves
-it where it was. On 2026-11-27 ``qdrant.service`` read ``NRestarts=0`` with
-its ``ActiveEnterTimestamp`` at the renewal's ``systemctl restart`` four days
-before (#52). A before-and-after read of it passes either way.
+``NRestarts`` counts only the restarts a unit's ``Restart=`` policy made, and
+an explicit start resets it to 0: a ``systemctl restart``, a stop and a
+start, or Docker's restart, which takes Qdrant, Ollama and the collector with
+it (``Requires=docker.service``). Measured on 2026-11-27 under systemd 255, on
+a transient unit: 3 after automatic restarts, 0 after ``systemctl restart``,
+0 after a stop and a start. So a healthy unit reads 0 before and after
+whether or not it restarted. That day ``qdrant.service`` read ``NRestarts=0``
+with its ``ActiveEnterTimestamp`` at the renewal's ``systemctl restart`` four
+days before (#52).
 
 What moves on any start is the unit's ``InvocationID`` and the container's
 ``StartedAt``. ``NRestarts`` stays only where it means what it counts: after
