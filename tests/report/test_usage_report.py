@@ -859,6 +859,30 @@ def test_classification_has_a_row_per_period_as_well_as_all() -> None:
     assert rows[("all", "rules", "exact")] == 1
 
 
+def test_a_prompt_following_up_on_both_sides_of_a_marker_counts_once_in_each() -> None:
+    """CR 57: follow-up prompts per period, and a call exactly at a reach."""
+    t = "2026-11-28T{}.000Z".format
+    r = analyse(
+        [
+            index_call(ts=t("11:58:00")),
+            bash("rg -n Foo.bar", ts=t("11:59:00")),
+            bash("rg -n Foo.baz", ts=t("12:01:00")),
+            index_call("codebase_impact", prompt="p9", ts="2026-11-28T12:00:00.000Z"),
+        ],
+        markers=MARKERS,
+    )
+    for per in ("from collection-on-co-index", "from policy-v2"):
+        assert count(r, "followup:prompts", period=per) == 1, per
+    assert count(r, "index:codebase_impact", period="from policy-v2") == 1  # at the reach
+
+
+def test_a_lower_bound_equal_to_the_threshold_is_established() -> None:
+    recs = [bash("rg -n Foo.bar", use_id=f"u{i}") for i in range(20)]
+    labels = {f"u{i}": "exact" for i in range(20)}
+    lower = ur.wilson(20, 20)[0]
+    assert analyse(recs, labels=labels, threshold=lower).agreement.established
+
+
 def test_a_record_before_every_marker_is_before_the_first() -> None:
     r = analyse([index_call(ts="2026-11-20T00:00:00.000Z")], markers=MARKERS)
     assert count(r, "index_calls", period="before collection-on-co-index") == 1
