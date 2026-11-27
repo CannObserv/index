@@ -494,13 +494,23 @@ def bash_searches(cmd: str) -> list[Search] | None:
         return None
     found: list[Search] = []
     for argv, index, stdin_file in _stages(tokens):
+        found += _stage_searches(argv, index, stdin_file)
+    return found
+
+
+_FIND_EXEC = {"-exec", "-execdir", "-ok", "-okdir"}
+
+
+def _stage_searches(argv: list[str], index: int, stdin_file: bool) -> list[Search]:
+    found: list[Search] = []
+    if True:
         argv = _strip_prefix(argv)
         via_xargs = False
         if argv and argv[0] == "xargs":
             via_xargs = True
             argv = _skip_options(argv[1:], _PREFIX_VALUED["xargs"])
         if not argv:
-            continue
+            return found
         head = os.path.basename(argv[0])
         sub = _skip_options(argv[1:], {"C", "c"}) if head == "git" else []
         if head == "git" and sub[:1] == ["grep"]:
@@ -518,8 +528,18 @@ def bash_searches(cmd: str) -> list[Search] | None:
             reads_pipe = index > 0 and not paths and not via_xargs
             found += [_search("rg", p, reads_pipe and not stdin_file, flags) for p in pats]
         elif head == "find":
-            globs = _find_globs(argv[1:])
+            own = argv[1:]
+            execs = []
+            for i, a in enumerate(own):
+                if a in _FIND_EXEC:
+                    own, rest = own[:i], own[i + 1 :]
+                    end = next((j for j, t in enumerate(rest) if t in (";", "+")), len(rest))
+                    execs = rest[:end]
+                    break
+            globs = _find_globs(own)
             found.append(Search("find", globs[0] if globs else None, globs=globs))
+            if execs:
+                found += _stage_searches(execs, 0, True)  # find hands it the files
     return found
 
 

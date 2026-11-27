@@ -412,6 +412,20 @@ def test_gits_own_options_come_before_grep(cmd) -> None:
     assert _found(cmd) == [("git grep", "foo", False)]
 
 
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "find . -name '*.py' -exec grep -l auth {} +",
+        "find . -name '*.py' -exec grep -l auth {} \\;",
+    ],
+)
+def test_a_grep_under_find_exec_is_a_search(cmd) -> None:
+    """CR 10: only the find's glob was seen, so the call read exact."""
+    assert _found(cmd) == [("find", "*.py", False), ("grep", "auth", False)]
+    [call] = analyse([bash(cmd)]).calls
+    assert call.rule == "semantic"
+
+
 def test_grep_flags_are_read() -> None:
     [s] = ur.bash_searches("grep -rnFw 'x: y' .")
     assert s.fixed and s.word
