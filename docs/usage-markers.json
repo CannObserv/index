@@ -1,0 +1,12 @@
+{
+  "markers": [
+    {
+      "id": "collection-on-co-index",
+      "date": "2026-11-23T20:00:33.982Z",
+      "what": "Collection on: co-index's Claude Code sessions export to the collector. The VS Code extension (2.1.330) exports; the CLI (2.1.309) doesn't.",
+      "where": "collection",
+      "source": "CannObserv/index#34, posted on #35",
+      "reach": [{"host": "co-index", "at": "2026-11-23T20:00:33.982Z"}]
+    }
+  ]
+}

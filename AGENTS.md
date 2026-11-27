@@ -71,7 +71,8 @@ uv run pre-commit install   # once per clone
 | `scripts/reembed.py` | Re-embeds the store from its own payloads on an engine change (D19, #11). `--dry-run` is the gate and the drift check; `--apply` rewrites `dense` only. Procedure: deploy/README.md, "Engine change" |
 | `scripts/nodesource.sh` | Installs Node from NodeSource (`install`, root, fingerprint-checked key) and checks the host against `deploy/` (`check`). Refuses while `exedev` is in group `docker` (D20). Run from the checkout |
 | `scripts/pre-ship.sh` | `shipping-work`'s gate (#3): CI's steps, in CI's order, stops at the first failure. Dev-only; clients never run it |
-| `tests/deploy/` | Behaviour and drift tests for the above |
+| `docs/usage-markers.json` | Dated usage interventions and their reach (#35). Convention: [docs/usage-markers.md](docs/usage-markers.md) |
+| `tests/deploy/`, `tests/report/` | Behaviour and drift tests for the above |
 | `.socraticode.json`, `.socraticodeignore`, `.socraticodecontextartifacts.json` | This repo's own SocratiCode client (D20, #18): `projectId: index`, no linked projects, the store's `env` block and the pin in `.claude/settings.json`. Guarded by `tests/ci/test_socraticode_config.py`. Detail: [docs/SOCRATICODE.md](docs/SOCRATICODE.md) |
 | `.github/dependabot.yml` | `github-actions` + `uv` (dev group), weekly, 7-day cooldown (#23). PRs land by fast-forward from a detached worktree, never via the deploy checkout's `main`: [docs/dependabot.md](docs/dependabot.md) |
 | `tests/ci/` | Guards for the Dependabot config, for where CI and clones get uv (`test_uv_source.py`), and for the attestation's CI side (`test_ci_attestation.py`: every trigger, attested or not). `test_dependabot.py` is the `adopting-dependabot` asset: edit its ADAPT block only |
