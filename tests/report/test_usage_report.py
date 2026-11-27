@@ -1125,6 +1125,13 @@ def test_every_table_has_its_header_when_it_has_no_rows(tmp_path) -> None:
         assert header.count(",") >= 3, (name, header)
 
 
+@pytest.mark.parametrize("value", ["-0.1", "1.5", "nan"])
+def test_an_agreement_threshold_outside_0_to_1_is_a_usage_error(tmp_path, value) -> None:
+    """CR 34: -1 made any trend established, 2 none."""
+    res = _run(_sample_lines(), "-", "--agreement-threshold", value, out=tmp_path / "d")
+    assert res.returncode == 64
+
+
 def test_no_records_writes_nothing_and_exits_1(tmp_path) -> None:
     out = tmp_path / "data"
     res = _run("", "-", out=out)

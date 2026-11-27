@@ -1392,6 +1392,8 @@ def main(argv: list[str]) -> int:
         model = read_labels(model_path) if args.model_labels or model_path.exists() else {}
         if args.sample is not None and args.sample < 1:
             raise Usage("--sample takes a positive count")
+        if not 0.0 <= args.agreement_threshold <= 1.0:
+            raise Usage("--agreement-threshold is a share, from 0 to 1")
         if args.sweep_reads < 1:
             raise Usage("--sweep-reads takes a positive count")
         if args.out.exists() and not args.out.is_dir():
