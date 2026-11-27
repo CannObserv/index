@@ -843,6 +843,22 @@ def test_a_prompt_spanning_a_marker_credits_each_call_to_its_own_period() -> Non
     assert count(r, "lookalike:read_sweep", period=before) == 0
 
 
+def test_classification_has_a_row_per_period_as_well_as_all() -> None:
+    """CR 54: every test read period "all" only."""
+    r = analyse(
+        [
+            bash("rg -n auth", ts="2026-11-28T11:00:00.000Z"),
+            bash("rg -n Foo.bar", ts="2026-11-28T13:00:00.000Z"),
+        ],
+        markers=MARKERS,
+    )
+    rows = {(x["period"], x["pass"], x["class"]): x["calls"] for x in r.classification}
+    assert rows[("from collection-on-co-index", "rules", "semantic")] == 1
+    assert rows[("from policy-v2", "rules", "exact")] == 1
+    assert rows[("from policy-v2", "rules", "semantic")] == 0
+    assert rows[("all", "rules", "exact")] == 1
+
+
 def test_a_record_before_every_marker_is_before_the_first() -> None:
     r = analyse([index_call(ts="2026-11-20T00:00:00.000Z")], markers=MARKERS)
     assert count(r, "index_calls", period="before collection-on-co-index") == 1
