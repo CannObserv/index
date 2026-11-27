@@ -1008,6 +1008,12 @@ def test_model_labels_resolve_the_ambiguous() -> None:
     assert {c.use_id: c.final for c in r.calls} == {"t1": None, "t2": "exact"}
 
 
+def test_a_model_label_never_overrides_a_rules_class() -> None:
+    """CR 55: the model judges only what the rules leave ambiguous."""
+    r = analyse([bash("rg -n Foo.bar", use_id="t2")], model_labels={"t2": "semantic"})
+    assert r.calls[0].final == "exact"
+
+
 def test_agreement_counts_an_unresolved_call_as_a_disagreement() -> None:
     recs = [
         bash("rg -n Foo.bar", use_id="a"),
