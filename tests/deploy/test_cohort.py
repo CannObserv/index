@@ -49,7 +49,9 @@ def _d17_clients() -> set[str]:
 def test_the_tags_are_d17s_clients_and_the_store() -> None:
     tags = [r["tag"] for r in _repos()]
     assert len(tags) == len(set(tags)), "a tag listed twice"
-    assert set(tags) - {"tag:index"} == _d17_clients()
+    assert set(tags) - {"tag:index"} == _d17_clients(), (
+        "D17 and deploy/cohort.json disagree: a new cohort VM goes in both, with its repo"
+    )
     assert "tag:index" in tags
 
 
