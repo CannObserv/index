@@ -104,6 +104,8 @@ this node out of the region the rest of the cohort is in.
 - **no service node can open a connection the ACL does not list** — check the
   negative, not just the positive
 - reboot: same node id, same IPs, same tag, `tailscaled` active, `NRestarts=0`
+  (no crash loop) and `InactiveEnterTimestamp` unset (no failed first start
+  that a start by hand reset to 0, #53)
 
 ## TLS is mandatory, not defence in depth (D14)
 
