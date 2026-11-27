@@ -1050,6 +1050,34 @@ def test_the_summary_and_tables_carry_no_command_or_query_text(tmp_path) -> None
     assert SECRET_TERM in (out / "ambiguous.csv").read_text()
 
 
+PUBLIC_TABLES = (
+    "report.md",
+    "counts.csv",
+    "classification.csv",
+    "efficiency_calls.csv",
+    "efficiency_requests.csv",
+)
+
+
+def test_no_pattern_path_or_query_of_any_tool_reaches_the_tables(tmp_path) -> None:
+    """CR 36: the term is planted in every field a tool's text can come from."""
+    term = SECRET_TERM
+    recs = [
+        tool("Grep", None, {"pattern": term, "path": "."}, prompt="q1"),
+        tool("Glob", None, {"pattern": f"**/*{term}*"}, prompt="q1"),
+        _read(f"/home/exedev/index/{term}.py", prompt="q1"),
+        _read(f"/home/exedev/notifier/{term}.py", prompt="q1"),
+        tool("Agent", {"subagent_type": "Explore"}, {"prompt": term}, prompt="q1"),
+        index_call(args={"query": term}, prompt="q1", agent="a1"),
+        bash(f"git clone https://github.com/CannObserv/notifier {term}", prompt="q1"),
+        api(prompt="q1"),
+    ]
+    out = tmp_path / "data"
+    assert _run(export(recs) + "\n", "-", "--sample", "9", out=out).returncode == 0
+    for name in PUBLIC_TABLES:
+        assert term not in (out / name).read_text(), name
+
+
 def test_the_ambiguous_set_goes_out_and_its_labels_come_back(tmp_path) -> None:
     out = tmp_path / "data"
     assert _run(_sample_lines(), "-", out=out).returncode == 0
