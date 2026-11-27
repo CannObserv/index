@@ -343,3 +343,21 @@ file name and format; read-sweep threshold; sampling method and the
 agreement threshold method; the shape of the session-driven labelling
 loop; report layout; the link check's cadence and cache; how private repo
 configs are read within D18.
+
+*As built (CannObserv/index#35, #36, 2026-11-27):*
+- **Markers:** `docs/usage-markers.json`, with its convention in
+  `docs/usage-markers.md`. A reach names a repo or a host.
+- **Read sweep:** 3 Reads.
+- **Sampling:** uniform by seed (`--sample N --seed S`).
+- **Agreement:** a Wilson 95% interval. A trend is established when the
+  lower bound reaches 0.80, until the first labelled sample (#37) sets the
+  threshold.
+- **The labelling loop:** `data/ambiguous.csv` goes out, and
+  `data/ambiguous-labels.csv` comes back.
+- **Layout:** `report.md` plus one CSV per table.
+- **Two calls this design didn't make:**
+  - a grep reading a pipe is a filter, not a look-alike;
+  - #54's boundary is read by shape (`mcp_unidentified`, whose period's
+    index count is a floor), not recorded as a marker.
+
+Detail: `deploy/README.md`, "Usage report".
