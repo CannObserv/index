@@ -1163,6 +1163,7 @@ def test_the_ambiguous_set_goes_out_and_its_labels_come_back(tmp_path) -> None:
     }
     assert by_class[("semantic", "final")] == 2 and by_class[("ambiguous", "final")] == 0
     assert by_class[("ambiguous", "rules")] == 1
+    assert list(csv.DictReader((out / "ambiguous.csv").open())) == []  # CR 47: resolved, gone
 
 
 def test_the_sample_for_the_operator_is_seeded_and_unlabelled(tmp_path) -> None:
