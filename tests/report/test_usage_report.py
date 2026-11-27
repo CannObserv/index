@@ -842,6 +842,13 @@ def test_token_sums_are_whole_numbers_in_every_table() -> None:
     assert "123456" in ur._md_table([row], ["input_tokens_sum"])
 
 
+def test_a_request_with_an_unidentified_mcp_call_has_no_known_path() -> None:
+    """CR 26: before #54's install it read grep-only or neither."""
+    r = analyse([tool("mcp_tool"), bash("rg -n Foo.bar"), api()])
+    rows = {row["path"]: row["requests"] for row in r.efficiency_requests}
+    assert rows["unidentified"] == 1 and rows["grep-only"] == 0
+
+
 def test_per_request_efficiency_by_path_keeps_cache_reads_apart() -> None:
     r = analyse(
         [
@@ -858,7 +865,7 @@ def test_per_request_efficiency_by_path_keeps_cache_reads_apart() -> None:
         ]
     )
     rows = {row["path"]: row for row in r.efficiency_requests}
-    assert set(rows) == {"index-only", "grep-only", "both", "neither"}
+    assert set(rows) == {"index-only", "grep-only", "both", "neither", "unidentified"}
     pi = rows["index-only"]
     assert pi["requests"] == 1 and pi["input_tokens_sum"] == 15
     assert pi["cache_read_tokens_sum"] == 1500 and pi["cost_usd_sum"] == pytest.approx(0.75)

@@ -1032,6 +1032,9 @@ def analyse(
     for (session, prompt), seq in by_prompt.items():
         has_index = any(c.kind == "index" for c in seq)
         has_grep = any(c.kind == "grep_like" for c in seq)
+        if any(c.kind == "mcp_unidentified" for c in seq):
+            paths[(session, prompt)] = "unidentified"  # it may have used the index
+            continue
         paths[(session, prompt)] = {
             (True, False): "index-only",
             (False, True): "grep-only",
@@ -1057,7 +1060,7 @@ def analyse(
         "cost_usd",
         "duration_ms",
     )
-    for path_name in ("index-only", "grep-only", "both", "neither"):
+    for path_name in ("index-only", "grep-only", "both", "neither", "unidentified"):
         group = grouped.get(path_name, [])
         row = {"path": path_name, "requests": len(group)}
         for m in metrics:
@@ -1294,7 +1297,9 @@ def write_report(out: Path, loaded: Loaded, result: Analysis, args, sample_rows)
     md.append(
         "**Caveats:** requests on different paths are usually different tasks, so this is "
         "no controlled comparison. `cost_usd` is an estimate on a subscription plan; tokens "
-        "are the firmer number. Cache reads are counted apart."
+        "are the firmer number. Cache reads are counted apart. `unidentified` holds a request "
+        "with an MCP call whose server is unknown (before #54's install): it may have used the "
+        "index."
     )
     md.append("")
     md.append(
