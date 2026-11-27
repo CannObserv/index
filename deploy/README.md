@@ -584,6 +584,76 @@ until it is removed by name: pulled by digest it isn't dangling, so neither
 new one has run for a while, `sudo docker rmi
 otel/opentelemetry-collector-contrib@sha256:<old digest>`.
 
+## Usage report
+
+`scripts/usage_report.py` (#36) reads the collector's records and writes the
+telemetry design's report (§ Report) to `data/` in the checkout. **It never
+runs as root:** the read happens through `sudo` at the call, and the script
+reads stdin. D21 stays as it is: no group, and no change to the directory's
+mode.
+
+```bash
+sudo sh -c 'zstd -dcq /var/lib/otelcol/archive/events-*.jsonl.zst; cat /var/lib/otelcol/events-*-size.jsonl /var/lib/otelcol/events.jsonl' 2>/dev/null \
+  | uv run scripts/usage_report.py -                # add --sample 120 for #37's sample
+```
+
+**`data/` is git-ignored, `0700`, and each file is `0600`.** The design
+accepts the output in the checkout. The real calls stay there: never commit,
+post or quote them. Issue comments carry counts, shapes and timings only.
+Each run overwrites the directory, apart from the two label files below.
+
+| File | Holds | Text from the calls? |
+|---|---|---|
+| `report.md` | the summary: counts, classification beside the agreement line, efficiency, with the caveats | no |
+| `counts.csv` | per host, repo and period: `measure`, `value` | no |
+| `classification.csv` | grep-like calls by class, `rules` and `final` passes, `all` and per period | no |
+| `efficiency_calls.csv`, `efficiency_requests.csv` | per call, by tool and class; per `prompt.id`, by path (index-only, grep-only, both, neither) | no |
+| `ambiguous.csv` | what the rules left ambiguous and no model label resolves, each with its `prompt.id`'s other calls | **yes** |
+| `label-sample.csv` | `--sample N`: grep-like calls drawn by `--seed`, unlabelled, for the operator | **yes** |
+
+**Read it this way:**
+- **Periods** split at `docs/usage-markers.json`'s reach for the host or the
+  repo ([convention](../docs/usage-markers.md)). If nothing reached a host and
+  repo, that pair has a single period, `unsplit`.
+- **An index call** is `mcp_tool` naming SocratiCode's server in
+  `tool_parameters`. An `mcp_tool` record without that shape is
+  `mcp_unidentified`, and its period's `index_calls_floor` is 1. That's every
+  MCP call before #54's install (2026-11-27T19:44:20Z). The boundary is in the
+  code, by shape, and is no marker.
+- **Bash.** Commands are read from `full_command`, or from `tool_input` when
+  the 4096-byte cut breaks it. A `grep` or `rg` reading a pipe filters another
+  command's output and counts as `bash_filter`, not as a look-alike.
+- **A read sweep** is 3 or more Reads in one `prompt.id` before any search
+  (`--sweep-reads`).
+- **Classes.** Rules decide `exact` and `semantic`; the rest is `ambiguous`.
+  The examples are in `tests/report/test_usage_report.py`, all synthetic. A
+  plain word that isn't on the common-noun list (`COMMON`) stays ambiguous,
+  since it may be the project's own term.
+
+**The model pass is a file out and a file back,** with no API call:
+1. The session reads `ambiguous.csv`.
+2. It writes `ambiguous-labels.csv` with the columns `tool_use_id` and
+   `label` (`exact` or `semantic`; other columns are ignored).
+3. The next run folds the labels in.
+
+**The operator's labels (#37):**
+1. Run with `--sample N`.
+2. Label `label-sample.csv` by hand.
+3. Save it as `data/labels.csv`.
+
+**Agreement.** Every run then measures the whole classifier against those
+labels:
+- with a Wilson 95% interval;
+- counting an ambiguous call that no model label has resolved as a
+  disagreement.
+
+A trend is established only when the lower bound reaches
+`--agreement-threshold`. It's 0.80 until #37 sets it. A session model never
+labels `labels.csv`.
+
+Exits 0; 1 when no record was read (a refused `sudo` reads as none); 64 on a
+usage error (a bad label or markers file).
+
 ## Qdrant upgrade
 
 **The image is a version and a digest** (`qdrant-run.sh`, #13), because

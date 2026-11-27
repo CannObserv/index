@@ -29,3 +29,6 @@ coverage.xml
 # Git worktrees
 .worktrees/
 .claude/worktrees/
+
+# The usage report's output (#36): real calls, never committed
+data/

@@ -70,12 +70,12 @@ uv run pre-commit install   # once per clone
 | `scripts/qdrant-ro-key.sh` | Mints and rotates Qdrant's read-only key (D22, #40): `qdrant.env` and `/etc/socraticode/qdrant-ro.key` (`0640 root:qdrant-ro`), for `qdrant-recovery.sh query` as the knob user. Root, run from the checkout. Takes effect at Qdrant's next restart: in a window |
 | `scripts/reembed.py` | Re-embeds the store from its own payloads on an engine change (D19, #11). `--dry-run` is the gate and the drift check; `--apply` rewrites `dense` only. Procedure: deploy/README.md, "Engine change" |
 | `scripts/nodesource.sh` | Installs Node from NodeSource (`install`, root, fingerprint-checked key) and checks the host against `deploy/` (`check`). Refuses while `exedev` is in group `docker` (D20). Run from the checkout |
-| `scripts/pre-ship.sh` | `shipping-work`'s gate (#3): CI's steps, in CI's order, stops at the first failure. Dev-only; clients never run it |
-| `docs/usage-markers.json` | Dated usage interventions and their reach (#35). Convention: [docs/usage-markers.md](docs/usage-markers.md) |
+| `scripts/pre-ship.sh` | `shipping-work`'s gate (#3): CI's steps, in CI's order, stops at the first failure. Dev-only |
+| `scripts/usage_report.py` | Usage report (#36), never as root; [markers](docs/usage-markers.md) (#35). Runbook: deploy/README.md |
 | `tests/deploy/`, `tests/report/` | Behaviour and drift tests for the above |
-| `.socraticode.json`, `.socraticodeignore`, `.socraticodecontextartifacts.json` | This repo's own SocratiCode client (D20, #18): `projectId: index`, no linked projects, the store's `env` block and the pin in `.claude/settings.json`. Guarded by `tests/ci/test_socraticode_config.py`. Detail: [docs/SOCRATICODE.md](docs/SOCRATICODE.md) |
+| `.socraticode.json`, `.socraticodeignore`, `.socraticodecontextartifacts.json` | This repo's own SocratiCode client (D20, #18): `projectId: index`, no linked projects, the store's `env` block and the pin in `.claude/settings.json`. Guarded by `tests/ci/test_socraticode_config.py` |
 | `.github/dependabot.yml` | `github-actions` + `uv` (dev group), weekly, 7-day cooldown (#23). PRs land by fast-forward from a detached worktree, never via the deploy checkout's `main`: [docs/dependabot.md](docs/dependabot.md) |
-| `tests/ci/` | Guards for the Dependabot config, for where CI and clones get uv (`test_uv_source.py`), and for the attestation's CI side (`test_ci_attestation.py`: every trigger, attested or not). `test_dependabot.py` is the `adopting-dependabot` asset: edit its ADAPT block only |
+| `tests/ci/` | Guards: the Dependabot config, where CI and clones get uv (`test_uv_source.py`), the attestation's CI side (`test_ci_attestation.py`: every trigger, attested or not). `test_dependabot.py` is the `adopting-dependabot` asset: edit its ADAPT block only |
 
 **Clients run `install_qdrant_key.sh` from a read-only clone of this repo** (public, no credential), never a copy: its tests pin exactly the properties a copy loses first. Procedure, and rotation: [docs/installing-the-key.md](docs/installing-the-key.md).
 
@@ -93,13 +93,13 @@ exe.dev VM `co-index` (`pdx`, 2 vCPU / 8 GB / 30 GB, proxy `private`), tailnet n
 | `index-checkin.timer` | every 10 min → co-status's dead-man's timer (CannObserv/status) | a missed check-in alerts there |
 | `cannobserv-disk-gc.timer` | the cohort disk GC, daily 05:15 UTC (#16). Provisioner's, installed by the `maintaining-host-disk` skill, not from `deploy/` | `sudo journalctl -u cannobserv-disk-gc` |
 | `cannobserv-disk-headroom.timer` | every 10 min, `/` at 85/80 → `co-index-disk-headroom` (CannObserv/status#72) | a missed check-in alerts there |
-| Node 26 (`nodejs`) | not a unit: NodeSource apt, for this repo's own SocratiCode client only. No unit or deploy script runs it (D20) | `bash scripts/nodesource.sh check` |
+| Node 26 (`nodejs`) | not a unit: NodeSource apt. No unit or deploy script runs it (D20) | `bash scripts/nodesource.sh check` |
 
 `qdrant.service`, `ollama.service` and `otelcol.service` are `Requires=docker.service`: **restarting Docker restarts all three.**
 
 **Where this repo is worked on: `co-index` itself** (D15, which amends D8; D18; D20). One checkout of *this* repo. **Never** a client checkout or a commit to a client repo. Node is for this repo's own SocratiCode client only, and only once `exedev` is out of group `docker` (D20). This host may index `index` and nothing else (D11).
 
-**Credentials:** `.env` (git-ignored, 0600) holds `GH_TOKEN`, scoped to this repo only, and one `GH_TOKEN_<REPO>` per cohort repo, for issues there only (D18): `GH_TOKEN="$GH_TOKEN_NOTIFIER" gh issue create -R CannObserv/notifier …`. Load with `set -a; . ./.env; set +a`. Plain `git push` works: a credential helper in this clone's `.git/config`, scoped to github.com, reads `GH_TOKEN` from `.env` when git asks, so the token is never in argv, a URL or a tracked file. The skills refresh hook pushes through it. `.git/config` isn't tracked, so a new clone sets it once:
+**Credentials:** `.env` (git-ignored, 0600) holds `GH_TOKEN`, scoped to this repo only, and one `GH_TOKEN_<REPO>` per cohort repo, for issues there only (D18): `GH_TOKEN="$GH_TOKEN_NOTIFIER" gh issue create -R CannObserv/notifier …`. Load with `set -a; . ./.env; set +a`. Plain `git push` works: a credential helper in this clone's `.git/config` reads `GH_TOKEN` from `.env` when git asks, so the token is never in argv, a URL or a tracked file. The skills refresh hook pushes through it. `.git/config` isn't tracked, so a new clone sets it once:
 
 ```bash
 git config credential.https://github.com.helper ''
