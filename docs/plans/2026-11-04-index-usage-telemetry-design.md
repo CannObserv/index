@@ -218,7 +218,10 @@ precious.
 **Counts, per host, repo and period** (periods split at markers):
 
 - index calls by tool (`codebase_search`, `_graph_query`, `_impact`, …),
-  and the share of `codebase_search` passing `includeLinked: true`;
+  and the share of `codebase_search` passing `includeLinked: true`. An
+  index call is `tool_name` `mcp_tool` with `tool_parameters`'
+  `mcp_server_name` SocratiCode's; the tool is its `mcp_tool_name`
+  (CannObserv/index#54);
 - look-alikes: Grep tool, `grep`/`rg`/`find` in Bash, Glob, Explore
   subagents, read sweeps (several Reads in one `prompt.id` with no search
   before them; threshold is the builder's);
