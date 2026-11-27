@@ -660,8 +660,8 @@ A trend is established only when the lower bound reaches
 labels `labels.csv`.
 
 Exits 0; 1 when no record was read (a refused `sudo` reads as none); 64 on a
-usage error: a bad argument; a bad label, markers or cohort file; or an `--out`
-it can't write. A label file names each `tool_use_id` once, as `exact` or
+usage error: a bad argument; a bad label, markers or cohort file; an input
+file it can't read; an `--out` it can't write; or a run as root. A label file names each `tool_use_id` once, as `exact` or
 `semantic`. A BOM is fine.
 
 ## Qdrant upgrade
