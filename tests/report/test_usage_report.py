@@ -683,6 +683,8 @@ def test_a_read_sweep_is_three_reads_in_one_prompt_before_any_search() -> None:
     assert count(r, "lookalike:read_sweep_reads") == 3
     r2 = analyse([_read("a", prompt="p2"), _read("b", prompt="p2")], sweep_reads=2)
     assert count(r2, "lookalike:read_sweep") == 1
+    r4 = analyse([_read(p, prompt="p4") for p in "abcd"])  # CR 53: past the threshold
+    assert count(r4, "lookalike:read_sweep") == 1 and count(r4, "lookalike:read_sweep_reads") == 4
 
 
 @pytest.mark.parametrize(
