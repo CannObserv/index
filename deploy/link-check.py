@@ -46,6 +46,9 @@ STAMP = "%Y-%m-%dT%H:%M:%SZ"
 COLLECTION_ID = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]*")
 
 
+NOT_FETCHED = object()
+
+
 class Unknown(Exception):
     """Qdrant didn't answer: no finding."""
 
@@ -128,10 +131,15 @@ def _fetch(raw: str, repo: str) -> dict | None:
 
 def _refresh(cohort: dict, cache: dict | None, now: datetime, path: str) -> dict:
     """The cache to check against, fetched anew when it's due."""
+    public = {e["repo"] for e in cohort["repos"] if not e.get("private")}
     if cache is not None:
         fetched = _parse(cache.get("fetched_at"))
         attempted = _parse(cache.get("attempted_at"))
-        if fetched is not None and now - fetched < timedelta(hours=REFRESH_H):
+        # A cache that isn't the list's -- a repo added or made public, or
+        # another base -- is due however fresh, or it reads that repo as one
+        # with no file for hours.
+        matches = set(cache["repos"]) == public and cache.get("raw") == cohort["raw"]
+        if matches and fetched is not None and now - fetched < timedelta(hours=REFRESH_H):
             return cache
         if attempted is not None and now - attempted < timedelta(hours=RETRY_H):
             return cache
@@ -142,13 +150,14 @@ def _refresh(cohort: dict, cache: dict | None, now: datetime, path: str) -> dict
             for e in cohort["repos"]
             if not e.get("private")
         }
-        cache = {"fetched_at": stamp, "attempted_at": stamp, "repos": repos}
+        cache = {"fetched_at": stamp, "attempted_at": stamp, "raw": cohort["raw"], "repos": repos}
     except RefreshFailed as e:
         print(f"link-check: refresh failed, cache kept: {e}", file=sys.stderr)
         old = cache or {}
         cache = {
             "fetched_at": old.get("fetched_at"),
             "attempted_at": stamp,
+            "raw": old.get("raw"),
             "repos": old.get("repos", {}),
         }
     _write_cache(path, cache)
@@ -191,8 +200,12 @@ def _findings(cohort: dict, cache: dict, now: datetime, store: Store) -> list[tu
     if hours >= STALE_H:
         found.append(("cache", f"no good fetch from GitHub in {hours} h"))
 
+    # A public repo the cache doesn't hold yet is unknown: its refresh is due
+    # and failed. Its links, and every link into it, wait for one.
     configs = {
-        e["repo"]: e["hand_listed"]["config"] if e.get("private") else cache["repos"].get(e["repo"])
+        e["repo"]: e["hand_listed"]["config"]
+        if e.get("private")
+        else cache["repos"].get(e["repo"], NOT_FETCHED)
         for e in cohort["repos"]
     }
 
@@ -200,7 +213,7 @@ def _findings(cohort: dict, cache: dict, now: datetime, store: Store) -> list[tu
         return isinstance(config, dict) and "invalid" not in config
 
     for repo, config in configs.items():
-        if config is None:
+        if config is None or config is NOT_FETCHED:
             continue
         if not readable(config):
             why = config.get("invalid") if isinstance(config, dict) else None
@@ -217,6 +230,8 @@ def _findings(cohort: dict, cache: dict, now: datetime, store: Store) -> list[tu
                 found.append((subject, f"{path}: no listed repo answers to it"))
                 continue
             target = configs[name]
+            if target is NOT_FETCHED:
+                continue
             pid = target.get("projectId") if readable(target) else None
             if not isinstance(pid, str) or not pid:
                 found.append((subject, f"{path}: {name} commits no projectId"))

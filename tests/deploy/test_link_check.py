@@ -211,17 +211,20 @@ def _cache(tmp_path: Path) -> dict:
     return json.loads((tmp_path / "cache" / "links.json").read_text())
 
 
-def _write_cache(tmp_path: Path, fetched: float | None, attempted: float, repos: dict) -> None:
+def _write_cache(
+    tmp_path: Path, fetched: float | None, attempted: float, repos: dict, raw: str | None = None
+) -> None:
+    """``raw`` is the base the cache was fetched from; a fresh cache must name
+    the list's to be read rather than fetched again (CR 2)."""
     (tmp_path / "cache").mkdir(exist_ok=True)
-    (tmp_path / "cache" / "links.json").write_text(
-        json.dumps(
-            {
-                "fetched_at": None if fetched is None else _iso(fetched),
-                "attempted_at": _iso(attempted),
-                "repos": repos,
-            }
-        )
-    )
+    cache = {
+        "fetched_at": None if fetched is None else _iso(fetched),
+        "attempted_at": _iso(attempted),
+        "repos": repos,
+    }
+    if raw is not None:
+        cache["raw"] = raw
+    (tmp_path / "cache" / "links.json").write_text(json.dumps(cache))
 
 
 def _lines(result: subprocess.CompletedProcess[str]) -> list[tuple[str, str]]:
@@ -444,13 +447,58 @@ def test_a_fresh_cache_is_read_and_github_is_not(world: tuple[World, str], tmp_p
         "status": None,
         "power-map": None,
     }
-    _write_cache(tmp_path, fetched=5.9, attempted=5.9, repos=repos)
+    _write_cache(tmp_path, fetched=5.9, attempted=5.9, repos=repos, raw=f"{base}/raw")
     result = _run(tmp_path, base)
     assert state.fetched() == []
     assert _lines(result) == [
         ("notifier/watcher", "../watcher: no collection codebase_nonexistent")
     ]
     assert _cache(tmp_path)["repos"] == repos, "a read rewrote it"
+
+
+def _fresh(state: World) -> dict:
+    return {r: json.loads(state.files[r][1]) for r in PUBLIC}
+
+
+def test_a_fresh_cache_that_is_missing_a_listed_repo_is_refreshed(
+    world: tuple[World, str], tmp_path: Path
+) -> None:
+    """CR 2: a repo added to the list, or made public, read as one with no
+    file for 6 hours, and every link into it as a finding."""
+    state, base = world
+    _healthy(state)
+    repos = _fresh(state)
+    del repos["watcher"]
+    _write_cache(tmp_path, fetched=1, attempted=1, repos=repos, raw=f"{base}/raw")
+    result = _run(tmp_path, base)
+    assert (result.returncode, result.stdout) == (0, ""), result.stderr
+    assert len(state.fetched()) == len(PUBLIC)
+    assert _cache(tmp_path)["repos"]["watcher"]["projectId"] == "watcher"
+
+
+def test_a_fresh_cache_from_another_base_is_refreshed(
+    world: tuple[World, str], tmp_path: Path
+) -> None:
+    state, base = world
+    _healthy(state)
+    _write_cache(tmp_path, 1, 1, _fresh(state), raw="https://raw.example/Other")
+    assert _run(tmp_path, base).returncode == 0
+    assert len(state.fetched()) == len(PUBLIC)
+    assert _cache(tmp_path)["raw"] == f"{base}/raw"
+
+
+def test_a_repo_the_cache_does_not_hold_yet_is_unknown_not_a_finding(
+    world: tuple[World, str], tmp_path: Path
+) -> None:
+    """The refresh it calls for failed: its links, and those into it, wait."""
+    state, base = world
+    _healthy(state)
+    repos = _fresh(state)
+    del repos["notifier"]
+    _write_cache(tmp_path, fetched=1, attempted=1, repos=repos, raw=f"{base}/raw")
+    state.raw_status = 500
+    result = _run(tmp_path, base)
+    assert (result.returncode, result.stdout) == (0, ""), result.stderr
 
 
 def test_a_cache_six_hours_old_is_refreshed(world: tuple[World, str], tmp_path: Path) -> None:
