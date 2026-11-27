@@ -717,6 +717,16 @@ def test_per_call_efficiency_by_tool_and_class() -> None:
     assert other["calls"] == 1 and other["size_n"] == 0 and other["size_sum"] is None
 
 
+def test_token_sums_are_whole_numbers_in_every_table() -> None:
+    """CR 8: they were floats, which report.md printed as 1.235e+05."""
+    r = analyse([api(prompt="p", inp=123456, cache_read=9876543, dur=1500)])
+    [row] = [x for x in r.efficiency_requests if x["requests"]]
+    assert row["input_tokens_sum"] == 123456 and isinstance(row["input_tokens_sum"], int)
+    assert isinstance(row["cache_read_tokens_sum"], int)
+    assert isinstance(row["duration_ms_sum"], int)
+    assert "123456" in ur._md_table([row], ["input_tokens_sum"])
+
+
 def test_per_request_efficiency_by_path_keeps_cache_reads_apart() -> None:
     r = analyse(
         [

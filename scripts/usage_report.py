@@ -977,13 +977,13 @@ def analyse(
             (True, True): "both",
             (False, False): "neither",
         }[(has_index, has_grep)]
-    per_prompt: dict = defaultdict(lambda: defaultdict(float))
+    per_prompt: dict = defaultdict(lambda: defaultdict(int))
     for r in apis:
         totals = per_prompt[(r.session, r.prompt)]
         for k in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens"):
-            totals[k] += r.num(k) or 0
-        totals["cost_usd"] += r.num("cost_usd") or 0.0
-        totals["duration_ms"] += r.num("duration_ms") or 0
+            totals[k] += int(r.num(k) or 0)
+        totals["cost_usd"] += float(r.num("cost_usd") or 0.0)
+        totals["duration_ms"] += int(r.num("duration_ms") or 0)
     grouped = defaultdict(list)
     for key, totals in per_prompt.items():
         grouped[paths.get(key, "neither")].append(totals)
