@@ -204,6 +204,13 @@ def test_a_missing_size_stays_missing_never_zero() -> None:
     assert loaded.records[0].num("tool_result_size_bytes") is None
 
 
+@pytest.mark.parametrize("value", ["nan", "inf", "-inf", "x"])
+def test_a_number_that_isnt_finite_is_missing(value) -> None:
+    """CR 14: one nan poisoned every sum it joined."""
+    loaded = ur.load_records([export([tool("Read", size=value)])])
+    assert loaded.records[0].num("tool_result_size_bytes") is None
+
+
 def test_the_host_proof_session_is_excluded() -> None:
     lines = [export([tool("Read", session="host-proof-33"), tool("Read")])]
     loaded = ur.load_records(lines)

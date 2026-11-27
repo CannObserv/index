@@ -81,6 +81,8 @@ class Record:
             number = float(value)
         except (TypeError, ValueError):
             return None
+        if not math.isfinite(number):
+            return None
         return int(number) if number.is_integer() and "." not in str(value) else number
 
     def get(self, key: str) -> str | None:
