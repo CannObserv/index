@@ -1330,7 +1330,8 @@ def write_report(out: Path, loaded: Loaded, result: Analysis, args, sample_rows)
         "unidentified MCP calls (`mcp_unidentified`, before #54's install) reads its index "
         "calls as a floor** (`index_calls_floor` 1). A grep reading a pipe is a `bash_filter`, "
         f"not a look-alike. A read sweep is {args.sweep_reads}+ Reads in one prompt before "
-        "any search."
+        "any search. A subagent shares its parent's prompt, so its calls count under "
+        "`subagent:` measures; sweeps and follow-ups are the main thread's."
     )
     for (host, repo, per), c in sorted(result.counts.items()):
         md += ["", f"### {host} · {repo} · {per}", ""]

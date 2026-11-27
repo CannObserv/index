@@ -1096,7 +1096,7 @@ def test_the_report_reads_stdin_and_writes_markdown_and_csvs_private(tmp_path) -
     for p in out.iterdir():
         assert stat.S_IMODE(p.stat().st_mode) == 0o600, p.name
     report = (out / "report.md").read_text()
-    for term in ("cost_usd", "estimate", "different tasks", "Agreement", "floor"):
+    for term in ("cost_usd", "estimate", "different tasks", "Agreement", "floor", "`subagent:`"):
         assert term in report, term
 
 
