@@ -964,6 +964,16 @@ def test_a_call_without_a_tool_use_id_is_never_labelled_or_sampled(tmp_path) -> 
     assert ids == ["k"]
 
 
+def test_an_id_labelled_two_ways_is_refused(tmp_path) -> None:
+    """CR 33: the last label won, silently."""
+    path = tmp_path / "l.csv"
+    path.write_text("tool_use_id,label\nt1,exact\nt1,exact\n")
+    assert ur.read_labels(path) == {"t1": "exact"}
+    path.write_text("tool_use_id,label\nt1,exact\nt1,semantic\n")
+    with pytest.raises(ur.Usage):
+        ur.read_labels(path)
+
+
 def test_label_files_take_only_exact_or_semantic(tmp_path) -> None:
     path = tmp_path / "l.csv"
     path.write_text("tool_use_id,label,extra\nt1,exact,x\nt2, Semantic ,y\nt3,,z\n")

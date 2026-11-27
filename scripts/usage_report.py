@@ -1124,7 +1124,10 @@ def read_labels(path: Path) -> dict:
                     continue
                 if label not in LABELS:
                     raise Usage(f"{path}: label {label!r} is not exact or semantic")
-                out[row["tool_use_id"].strip()] = label
+                use_id = row["tool_use_id"].strip()
+                if out.get(use_id, label) != label:
+                    raise Usage(f"{path}: {use_id} is labelled both {out[use_id]} and {label}")
+                out[use_id] = label
             return out
     except OSError as exc:
         raise Usage(f"{path}: {exc}") from exc
