@@ -391,10 +391,9 @@ def _stages(tokens: list[str]):
 
     skip = False
     for tok in tokens:
-        if skip:
+        if skip:  # a redirection's target
             skip = False
-            if pipeline[-1] is not None:
-                continue
+            continue
         if tok in _SEPARATORS:
             yield from flush()
             pipeline, redirect_in = [[]], [False]
@@ -523,43 +522,42 @@ _FIND_EXEC = {"-exec", "-execdir", "-ok", "-okdir"}
 
 def _stage_searches(argv: list[str], index: int, stdin_file: bool) -> list[Search]:
     found: list[Search] = []
-    if True:
-        argv = _strip_prefix(argv)
-        via_xargs = False
-        if argv and argv[0] == "xargs":
-            via_xargs = True
-            argv = _skip_options(argv[1:], _PREFIX_VALUED["xargs"])
-        if not argv:
-            return found
-        head = os.path.basename(argv[0])
-        sub = _skip_options(argv[1:], {"C", "c"}) if head == "git" else []
-        if head == "git" and sub[:1] == ["grep"]:
-            pats, _, flags = _grep_args(sub[1:], _GREP_VALUED, _GREP_LONG_VALUED)
-            found += [_search("git grep", p, False, flags) for p in pats]
-        elif head in ("grep", "egrep", "fgrep"):
-            pats, paths, flags = _grep_args(argv[1:], _GREP_VALUED, _GREP_LONG_VALUED)
-            recursive = bool(flags & {"-r", "-R", "--recursive", "--dereference-recursive"})
-            reads_pipe = index > 0 and not paths and not recursive and not via_xargs
-            if head == "fgrep":
-                flags.add("-F")
-            found += [_search("grep", p, reads_pipe and not stdin_file, flags) for p in pats]
-        elif head == "rg":
-            pats, paths, flags = _grep_args(argv[1:], _RG_VALUED, _RG_LONG_VALUED)
-            reads_pipe = index > 0 and not paths and not via_xargs
-            found += [_search("rg", p, reads_pipe and not stdin_file, flags) for p in pats]
-        elif head == "find":
-            own = argv[1:]
-            execs = []
-            for i, a in enumerate(own):
-                if a in _FIND_EXEC:
-                    own, rest = own[:i], own[i + 1 :]
-                    end = next((j for j, t in enumerate(rest) if t in (";", "+")), len(rest))
-                    execs = rest[:end]
-                    break
-            globs = _find_globs(own)
-            found.append(Search("find", globs[0] if globs else None, globs=globs))
-            if execs:
-                found += _stage_searches(execs, 0, True)  # find hands it the files
+    argv = _strip_prefix(argv)
+    via_xargs = False
+    if argv and argv[0] == "xargs":
+        via_xargs = True
+        argv = _skip_options(argv[1:], _PREFIX_VALUED["xargs"])
+    if not argv:
+        return found
+    head = os.path.basename(argv[0])
+    sub = _skip_options(argv[1:], {"C", "c"}) if head == "git" else []
+    if head == "git" and sub[:1] == ["grep"]:
+        pats, _, flags = _grep_args(sub[1:], _GREP_VALUED, _GREP_LONG_VALUED)
+        found += [_search("git grep", p, False, flags) for p in pats]
+    elif head in ("grep", "egrep", "fgrep"):
+        pats, paths, flags = _grep_args(argv[1:], _GREP_VALUED, _GREP_LONG_VALUED)
+        recursive = bool(flags & {"-r", "-R", "--recursive", "--dereference-recursive"})
+        reads_pipe = index > 0 and not paths and not recursive and not via_xargs
+        if head == "fgrep":
+            flags.add("-F")
+        found += [_search("grep", p, reads_pipe and not stdin_file, flags) for p in pats]
+    elif head == "rg":
+        pats, paths, flags = _grep_args(argv[1:], _RG_VALUED, _RG_LONG_VALUED)
+        reads_pipe = index > 0 and not paths and not via_xargs
+        found += [_search("rg", p, reads_pipe and not stdin_file, flags) for p in pats]
+    elif head == "find":
+        own = argv[1:]
+        execs = []
+        for i, a in enumerate(own):
+            if a in _FIND_EXEC:
+                own, rest = own[:i], own[i + 1 :]
+                end = next((j for j, t in enumerate(rest) if t in (";", "+")), len(rest))
+                execs = rest[:end]
+                break
+        globs = _find_globs(own)
+        found.append(Search("find", globs[0] if globs else None, globs=globs))
+        if execs:
+            found += _stage_searches(execs, 0, True)  # find hands it the files
     return found
 
 
@@ -952,20 +950,19 @@ def analyse(
             c["sibling_access"] += 1
         by_prompt[(call.rec.session, call.rec.prompt)].append(call)
 
-    for (_, _), seq in by_prompt.items():
+    for seq in by_prompt.values():
         key = (seq[0].rec.host, seq[0].rec.repo, period(seq[0].rec))
-        reads = 0
-        searched = False
-        after_search = 0
+        reads = after_search = 0
+        searched = searched_index = False
         for call in seq:
             if call.kind == "read" and not searched:
                 reads += 1
+            if call.kind == "grep_like" and searched_index:
+                after_search += 1
             if call.kind in ("index", "grep_like", "explore"):
                 searched = True
-            if call.kind == "grep_like" and any(
-                p.tool == "index:codebase_search" for p in seq[: seq.index(call)]
-            ):
-                after_search += 1
+            if call.tool == "index:codebase_search":
+                searched_index = True
         if reads >= sweep_reads:
             counts[key]["lookalike:read_sweep"] += 1
             counts[key]["lookalike:read_sweep_reads"] += reads
