@@ -18,9 +18,10 @@ overwrites):
   follow-ups;
 - ``classification.csv``: grep-like calls by class, by rules and final;
 - ``efficiency_calls.csv``, ``efficiency_requests.csv``;
-- ``ambiguous.csv``: the calls the rules leave ambiguous, with their
-  ``prompt.id`` siblings, for the session's model. It writes its labels to
-  ``ambiguous-labels.csv`` (``tool_use_id,label``), which the next run folds in;
+- ``ambiguous.csv``: the calls the rules leave ambiguous and no model label
+  resolves yet, with their ``prompt.id`` siblings, for the session's model. It
+  writes its labels to ``ambiguous-labels.csv`` (``tool_use_id,label``), which
+  the next run folds in;
 - ``label-sample.csv`` with ``--sample N``: grep-like calls drawn by seed, for
   the operator (#37), who saves them labelled as ``labels.csv``.
 
