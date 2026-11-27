@@ -284,6 +284,19 @@ def test_the_cache_is_written_whole_at_0644(world: tuple[World, str], tmp_path: 
     assert [p.name for p in (tmp_path / "cache").iterdir()] == ["links.json"]
 
 
+def test_a_write_cut_off_by_the_timeout_leaves_nothing_behind(
+    world: tuple[World, str], tmp_path: Path
+) -> None:
+    """CR 19: SIGTERM mid-write skips the temp file's cleanup. The cache is
+    never torn, but each such file would stay: the next write sweeps them."""
+    state, base = world
+    _healthy(state)
+    (tmp_path / "cache").mkdir()
+    (tmp_path / "cache" / ".links.abc123").write_text("{torn")
+    assert _run(tmp_path, base).returncode == 0
+    assert [p.name for p in (tmp_path / "cache").iterdir()] == ["links.json"]
+
+
 def test_no_config_or_no_links_is_not_a_finding(world: tuple[World, str], tmp_path: Path) -> None:
     """provisioner today: no ``.socraticode.json``. power-map, address-validator,
     usa-wa and index: no ``linkedProjects`` key at all."""

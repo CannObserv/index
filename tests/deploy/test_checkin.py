@@ -577,10 +577,13 @@ def test_an_unknown_link_check_is_no_finding(host: Path) -> None:
     assert _body(host)["status"] == "ok"
 
 
-@pytest.mark.parametrize(("code", "out"), [("3", ""), ("127", ""), ("1", ""), ("124", "")])
+@pytest.mark.parametrize(
+    ("code", "out"), [("3", ""), ("127", ""), ("1", ""), ("124", ""), ("137", "")]
+)
 def test_a_broken_link_check_is_heard(host: Path, code: str, out: str) -> None:
     """3 is its own failure, 127 a missing install, 1 with nothing said a
-    crash, 124 its ``timeout``: none of them is a clean cohort."""
+    crash, 124 its ``timeout``, 137 the ``-k`` kill after it: none of them is
+    a clean cohort."""
     _write(host, "status.env", STATUS_ENV)
     result = _run(host, healthy=True, STUB_LINKS_EXIT=code, STUB_LINKS_OUT=out)
     assert result.returncode == 0, result.stderr

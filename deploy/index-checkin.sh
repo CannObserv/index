@@ -65,7 +65,8 @@ open=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${QURL}/collections
 # goes as its file's path. link-check.py caches GitHub's copies for hours, so
 # this fetches nothing on most ticks. Exit 1 is one `subject<TAB>message` line
 # per finding; 2 is unknown, no finding (Qdrant blinked since the read above);
-# anything else, or 1 with nothing said, is the check broken, and heard.
+# anything else (124 or 137 from the `timeout`), or 1 with nothing said, is
+# the check broken, and heard.
 # Its own budgets (40 s GitHub, 30 s Qdrant) expire as no finding well inside
 # the `timeout`, which bounds the rest, a slow name lookup among it (CR 4,
 # CR 14): the unit has no start timeout, and a hang here would silence the

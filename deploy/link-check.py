@@ -122,6 +122,11 @@ def _read_cache(path: str) -> dict | None:
 def _write_cache(path: str, cache: dict) -> None:
     parent = os.path.dirname(path) or "."
     os.makedirs(parent, mode=0o755, exist_ok=True)
+    # A SIGTERM mid-write (the check-in's `timeout`) skips the cleanup below:
+    # the cache is never torn, but its temp file would stay (CR 19).
+    for leftover in os.listdir(parent):
+        if leftover.startswith(".links."):
+            os.unlink(os.path.join(parent, leftover))
     fd, tmp = tempfile.mkstemp(dir=parent, prefix=".links.")
     try:
         with os.fdopen(fd, "w") as f:
