@@ -54,6 +54,30 @@ CLASSES = ("exact", "semantic", "ambiguous")
 SWEEP_READS = 3
 SUBAGENT = "subagent:"  # the prefix of a measure counting subagents' calls
 THRESHOLD = 0.80
+# The columns of the efficiency tables, written even when a table has no rows.
+EFFICIENCY_CALL_FIELDS = [
+    "tool",
+    "class",
+    "calls",
+    "size_n",
+    "size_sum",
+    "size_median",
+    "size_mean",
+    "duration_n",
+    "duration_median",
+    "duration_mean",
+]
+REQUEST_METRICS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_read_tokens",
+    "cache_creation_tokens",
+    "cost_usd",
+    "duration_ms",
+)
+EFFICIENCY_REQUEST_FIELDS = ["path", "requests"] + [
+    f"{m}_{s}" for m in REQUEST_METRICS for s in ("sum", "median")
+]
 
 
 class Usage(Exception):
@@ -1180,31 +1204,6 @@ def _private_writer(path: Path):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
     os.fchmod(fd, 0o600)
     return os.fdopen(fd, "w", newline="")
-
-
-EFFICIENCY_CALL_FIELDS = [
-    "tool",
-    "class",
-    "calls",
-    "size_n",
-    "size_sum",
-    "size_median",
-    "size_mean",
-    "duration_n",
-    "duration_median",
-    "duration_mean",
-]
-REQUEST_METRICS = (
-    "input_tokens",
-    "output_tokens",
-    "cache_read_tokens",
-    "cache_creation_tokens",
-    "cost_usd",
-    "duration_ms",
-)
-EFFICIENCY_REQUEST_FIELDS = ["path", "requests"] + [
-    f"{m}_{s}" for m in REQUEST_METRICS for s in ("sum", "median")
-]
 
 
 def _write_csv(path: Path, rows: list[dict], fields: list[str]) -> None:
