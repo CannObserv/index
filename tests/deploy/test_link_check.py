@@ -19,13 +19,15 @@ that each declared link names a collection that exists and holds points.
 - **A finding:** a link whose target's ``projectId`` has no
   ``codebase_<id>``, or one with 0 points (counted exactly); a path whose
   last component names no listed repo; a link to a listed repo that commits
-  no ``projectId`` (nothing can be confirmed for it); a ``.socraticode.json``
-  that isn't JSON, or whose ``linkedProjects`` isn't a list of paths.
+  no ``projectId`` (nothing can be confirmed for it), or one that is no
+  collection name; a ``.socraticode.json`` that isn't JSON or a JSON object,
+  is over 64 KiB, or whose ``linkedProjects`` isn't a list of paths.
 - **Not a finding:** a repo with no ``.socraticode.json``, or none in
   ``linkedProjects``.
 - **The cache.** The check-in runs every 10 minutes and must not fetch from
   GitHub each time. Public repos' files come from raw.githubusercontent.com,
-  anonymously, once the cache is 6 hours old. A refresh that fails is
+  anonymously, once the cache is 6 hours old, or at once when it doesn't
+  hold the list's public repos or base. A refresh that fails is
   ``unknown``: the old cache stands, the next try waits an hour, and the
   refresh is all or nothing. A cache with no good fetch in 24 hours is the
   ``cache`` finding, as a stale ``otel:retention`` stamp is: a dead fetch is
