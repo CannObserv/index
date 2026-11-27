@@ -754,6 +754,19 @@ def test_a_subagents_api_requests_count_apart() -> None:
     assert count(r, "api_requests") == 1 and count(r, "subagent:api_requests") == 1
 
 
+def test_a_subagents_unidentified_call_and_linked_share_are_read() -> None:
+    """CR 52: a subagent-only period still reads as a floor and has its share."""
+    r = analyse(
+        [
+            tool("mcp_tool", agent="a1"),
+            index_call(args={"query": "q", "includeLinked": True}, agent="a1"),
+            index_call(agent="a1"),
+        ]
+    )
+    assert count(r, "index_calls_floor") == 1
+    assert count(r, "subagent:codebase_search_linked_share") == 0.5
+
+
 def test_a_subagents_reads_are_no_read_sweep_of_the_parent() -> None:
     r = analyse([_read(p, agent="a1") for p in "abc"])
     assert count(r, "lookalike:read_sweep") == 0
