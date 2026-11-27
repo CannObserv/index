@@ -13,7 +13,9 @@ that each declared link names a collection that exists and holds points.
   findings, spliced into JSON it builds by hand, so neither part holds a
   quote, a backslash or a control character.
 - **Exit 2**, unknown: Qdrant didn't answer. The check-in's own
-  ``qdrant:collections`` is that finding. **Exit 3**, the check itself failed.
+  ``qdrant:collections`` is that finding. **Exit 3**, the check itself failed:
+  a 401, a 403 or a failed TLS check among it, since the check-in's own read
+  took the same URL and key a moment before.
 - **A finding:** a link whose target's ``projectId`` has no
   ``codebase_<id>``, or one with 0 points (counted exactly); a path whose
   last component names no listed repo; a link to a listed repo that commits
@@ -193,13 +195,24 @@ def _iso(hours_ago: float) -> str:
 
 
 def _run(
-    tmp_path: Path, base: str, hand: dict | None = None, cohort: Path | None = None
+    tmp_path: Path,
+    base: str,
+    hand: dict | None = None,
+    cohort: Path | None = None,
+    qdrant: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     key = tmp_path / "qdrant.key"
     key.write_text(f"{KEY}\n")
     cohort = cohort or _cohort(tmp_path, base, hand)
     return subprocess.run(
-        [str(SCRIPT), "check", base, str(key), str(cohort), str(tmp_path / "cache" / "links.json")],
+        [
+            str(SCRIPT),
+            "check",
+            qdrant or base,
+            str(key),
+            str(cohort),
+            str(tmp_path / "cache" / "links.json"),
+        ],
         capture_output=True,
         text=True,
         env={k: v for k, v in os.environ.items() if not k.lower().endswith("_proxy")},
@@ -622,7 +635,7 @@ def test_an_unreachable_github_is_a_failed_refresh(
 # --- Qdrant -----------------------------------------------------------------
 
 
-@pytest.mark.parametrize("status", [500, 503, 401])
+@pytest.mark.parametrize("status", [500, 503])
 def test_qdrant_not_answering_is_unknown(
     world: tuple[World, str], tmp_path: Path, status: int
 ) -> None:
@@ -633,6 +646,39 @@ def test_qdrant_not_answering_is_unknown(
     state.qdrant_status = status
     result = _run(tmp_path, base)
     assert (result.returncode, result.stdout) == (2, "")
+
+
+def test_a_refused_qdrant_is_unknown(world: tuple[World, str], tmp_path: Path) -> None:
+    state, base = world
+    _healthy(state)
+    with ThreadingHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler) as dead:
+        port = dead.server_port
+    result = _run(tmp_path, base, qdrant=f"http://127.0.0.1:{port}")
+    assert (result.returncode, result.stdout) == (2, "")
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_a_refused_key_is_the_check_broken(
+    world: tuple[World, str], tmp_path: Path, status: int
+) -> None:
+    """CR 3: the check-in's own read took the same key a moment before, so a
+    401 or 403 here is no blip. Unknown for good would be silent for good."""
+    state, base = world
+    _healthy(state)
+    state.qdrant_status = status
+    result = _run(tmp_path, base)
+    assert (result.returncode, result.stdout) == (3, "")
+    assert str(status) in result.stderr
+
+
+def test_a_tls_failure_is_the_check_broken(world: tuple[World, str], tmp_path: Path) -> None:
+    """CR 3: curl verified this URL a moment before; Python failing to is
+    this check's own fault (a CA path, say), and would never clear."""
+    state, base = world
+    _healthy(state)
+    result = _run(tmp_path, base, qdrant=base.replace("http://", "https://"))
+    assert (result.returncode, result.stdout) == (3, "")
+    assert "SSL" in result.stderr
 
 
 def test_the_key_is_read_from_its_file_and_sent_as_a_header(
