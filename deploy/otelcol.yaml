@@ -139,6 +139,15 @@ processors:
             delete_key(attributes, "tool_parameters")
             where attributes["tool_name"] == nil
             or not IsMatch(attributes["tool_name"], "^(Bash|Agent|Task|Skill|mcp_tool)$")
+          # An MCP call's tool_parameters stays only in the client's shape:
+          # the server's name and the tool's, nothing else. A release that
+          # put an argument there would otherwise write every server's (D21).
+          # An mcp_tool record without it means the shape changed.
+          - >-
+            delete_key(attributes, "tool_parameters")
+            where attributes["tool_name"] == "mcp_tool"
+            and not IsMatch(attributes["tool_parameters"],
+            "^\\{\\x22mcp_server_name\\x22:\\x22[^\\x22\\x5c]*\\x22,\\x22mcp_tool_name\\x22:\\x22[^\\x22\\x5c]*\\x22\\}$")
           # Read: the path alone, as {"file_path":"…"}. Any other shape goes.
           - >-
             replace_pattern(attributes["tool_input"],

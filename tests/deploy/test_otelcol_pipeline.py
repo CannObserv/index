@@ -233,7 +233,8 @@ DROPPED_INPUT = {
 #: command), Agent (its type), Skill (its name) and MCP tools (server, tool).
 PARAMETERS_KEPT = {"Bash", "Agent", "Task", "Skill", MCP}
 #: MCP calls by id: ``(tool_parameters, tool_input, whether tool_input is
-#: kept)``. Each keeps its ``tool_parameters``, so none holds DROP there.
+#: kept)``, all in the client's shape. Each keeps its ``tool_parameters``, so
+#: none holds DROP there.
 #: ``tool_input`` stays only for SocratiCode's server, by name, in the one
 #: shape the client sends (D21: no other server's arguments are written).
 MCP_CALLS = {
@@ -255,28 +256,18 @@ MCP_CALLS = {
         _json(q=f"{DROP}-longer"),
         False,
     ),
+}
+#: MCP calls whose ``tool_parameters`` isn't the client's shape, by id. Each
+#: loses both fields, as Read's other shapes do: a release that put an
+#: argument in ``tool_parameters`` would otherwise write every server's.
+MCP_OFF_SHAPE = {
     # The server's name inside the tool's: escaped, so not a key.
-    "smuggled": (
-        _mcp("capture", 'x","mcp_server_name":"socraticode'),
-        _json(q=f"{DROP}-smuggled"),
-        False,
+    "smuggled": _mcp("capture", f'{DROP}","mcp_server_name":"socraticode'),
+    "reordered": _json(mcp_tool_name=f"{DROP}-reordered", mcp_server_name="socraticode"),
+    "extra-key": _json(
+        mcp_server_name="socraticode", mcp_tool_name="codebase_search", args=f"{DROP}-extra"
     ),
-    # Any shape but the client's goes, as Read's does: fail closed.
-    "reordered": (
-        _json(mcp_tool_name="codebase_search", mcp_server_name="socraticode"),
-        _json(q=f"{DROP}-reordered"),
-        False,
-    ),
-    "extra-key": (
-        _json(mcp_server_name="socraticode", mcp_tool_name="codebase_search", note="kept"),
-        _json(q=f"{DROP}-extra-key"),
-        False,
-    ),
-    "nested": (
-        _json(x={"mcp_server_name": "socraticode", "mcp_tool_name": "codebase_search"}),
-        _json(q=f"{DROP}-nested"),
-        False,
-    ),
+    "nested": _json(x={"mcp_server_name": "socraticode", "mcp_tool_name": f"{DROP}-nested"}),
 }
 MCP_LONG_QUERY = f"keep_mcp_long {SECRETS['ghp']} " + "z" * 5000
 
@@ -333,6 +324,10 @@ def _corpus() -> list[tuple[str, dict]]:
     mcp_calls = [
         _tool_result(MCP, f"mcp-{call}", tool_parameters=parameters, tool_input=value)
         for call, (parameters, value, _) in MCP_CALLS.items()
+    ]
+    mcp_calls += [
+        _tool_result(MCP, f"mcp-{call}", tool_parameters=parameters, tool_input=_json(q=DROP))
+        for call, parameters in MCP_OFF_SHAPE.items()
     ]
     mcp_calls += [
         _tool_result(MCP, "mcp-no-parameters", tool_input=_json(q=f"{DROP}-no-parameters")),
@@ -726,6 +721,14 @@ def test_an_mcp_call_keeps_its_input_only_for_socraticode(collector: Collector, 
         assert attributes["tool_input"] == sent
     else:
         assert "tool_input" not in attributes
+
+
+@pytest.mark.parametrize("call", list(MCP_OFF_SHAPE))
+def test_an_mcp_call_in_another_shape_loses_both(collector: Collector, call: str) -> None:
+    attributes = _records(collector)[f"mcp-{call}"]["attributes"]
+    assert attributes["tool_name"] == MCP
+    assert "tool_parameters" not in attributes
+    assert "tool_input" not in attributes
 
 
 def test_an_mcp_call_with_no_parameters_loses_its_input(collector: Collector) -> None:

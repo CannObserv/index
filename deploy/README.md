@@ -486,7 +486,9 @@ as sent. A kept value is cut at 4096 bytes, so a long `tool_parameters` or
 the tool are in `tool_parameters`, as
 `{"mcp_server_name":"…","mcp_tool_name":"…"}`, and SocratiCode's server is
 `plugin_socraticode_socraticode` (or `socraticode`, standalone). Only
-SocratiCode's calls keep `tool_input` (D21). Records written before #54's
+SocratiCode's calls keep `tool_input` (D21). `tool_parameters` in any other
+shape goes with `tool_input`, so an `mcp_tool` record without it means the
+client changed its shape: the keep rule needs the new one. Records written before #54's
 install keep neither field, so no MCP call before then can be identified.
 Count index calls by `tool_parameters`, never by grepping for `codebase_`:
 that matches Bash command text.
