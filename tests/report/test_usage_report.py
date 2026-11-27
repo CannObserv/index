@@ -443,6 +443,20 @@ def test_a_hash_inside_quotes_is_kept() -> None:
     assert _found("grep -rn '# x' .") == [("grep", "# x", False)]
 
 
+@pytest.mark.parametrize(
+    ("cmd", "expected"),
+    [
+        ("rg -d 2 auth", [("rg", "auth", False)]),
+        ("grep -rf pats.txt src/", [("grep", None, False)]),
+        ("rg --file=pats.txt src", [("rg", None, False)]),
+        ("grep --file pats.txt -e foo src", [("grep", "foo", False)]),
+    ],
+)
+def test_rg_depth_takes_a_value_and_a_pattern_file_is_unknown(cmd, expected) -> None:
+    """CR 12: ``rg -d 2`` read 2 as the pattern; ``-f FILE`` took the first path."""
+    assert _found(cmd) == expected
+
+
 def test_grep_flags_are_read() -> None:
     [s] = ur.bash_searches("grep -rnFw 'x: y' .")
     assert s.fixed and s.word

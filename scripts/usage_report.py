@@ -277,7 +277,7 @@ _GREP_LONG_VALUED = {
     "--color",
     "--colour",
 }
-_RG_VALUED = set("efmABCgtTjMEr")
+_RG_VALUED = set("efmABCgtTjMErd")
 _RG_LONG_VALUED = {
     "--regexp",
     "--file",
@@ -446,6 +446,7 @@ def _strip_prefix(argv: list[str]) -> list[str]:
 def _grep_args(argv: list[str], short_valued: set, long_valued: set):
     patterns, positional = [], []
     flags = set()
+    from_file = False
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -455,6 +456,7 @@ def _grep_args(argv: list[str], short_valued: set, long_valued: set):
         if a.startswith("--"):
             name, eq, value = a.partition("=")
             flags.add(name)
+            from_file |= name == "--file"
             if name in ("--regexp",):
                 if eq:
                     patterns.append(value)
@@ -475,12 +477,15 @@ def _grep_args(argv: list[str], short_valued: set, long_valued: set):
                         i += 1
                     if ch == "e":
                         patterns.append(value)
+                    from_file |= ch == "f"
                     break
                 j += 1
         else:
             positional.append(a)
         i += 1
-    if not patterns and positional:
+    if not patterns and from_file:
+        patterns.append(None)  # read from the file: unknown here
+    elif not patterns and positional:
         patterns.append(positional.pop(0))
     elif not patterns:
         patterns.append(None)
