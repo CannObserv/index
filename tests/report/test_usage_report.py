@@ -743,6 +743,22 @@ def test_no_sibling_access(rec) -> None:
     assert count(analyse([rec]), "sibling_access") == 0
 
 
+@pytest.mark.parametrize(
+    ("rec", "route"),
+    [
+        (bash("git clone https://github.com/CannObserv/notifier"), "clone"),
+        (bash("gh repo clone CannObserv/watcher"), "clone"),
+        (bash("gh api repos/CannObserv/status/contents/x"), "fetch"),
+        (_read("/home/exedev/notifier/a.py"), "read"),
+    ],
+)
+def test_sibling_access_is_split_by_route(rec, route) -> None:
+    """CR 64: Goal 1 sets clones and fetches against linked searches."""
+    r = analyse([rec])
+    assert count(r, f"sibling:{route}") == 1
+    assert sum(count(r, f"sibling:{x}") for x in ("clone", "fetch", "read")) == 1
+
+
 def test_linked_searches_are_counted_beside_sibling_access() -> None:
     """CR 45: both measures, side by side, as the design reads them."""
     r = analyse(

@@ -869,29 +869,30 @@ def _classify_call(rec: Record) -> Call:
     return Call(rec, "other", name)
 
 
-def _siblings_of(call: Call, cohort: set[str]) -> list[str]:
+def _siblings_of(call: Call, cohort: set[str]) -> list[tuple[str, str]]:
+    """(route, repo) for each cohort sibling the call reaches: clone, fetch, read."""
     own = call.rec.repo
     others = cohort - {own}
-    found = []
+    found: list[tuple[str, str]] = []
     if call.rec.get("tool_name") == "Bash":
         cmd = call.text
         for m in re.finditer(
             r"\bgit\s+clone\b[^|;&\n]*?[/:]CannObserv/([A-Za-z0-9._-]+)", cmd, re.I
         ):
-            found.append(m.group(1))
+            found.append(("clone", m.group(1)))
         for m in re.finditer(r"\bgh\s+repo\s+clone\s+(?:CannObserv/)?([A-Za-z0-9._-]+)", cmd, re.I):
-            found.append(m.group(1))
+            found.append(("clone", m.group(1)))
         for m in re.finditer(
             r"\bgh\s+api\s+[^|;&\n]*?repos/CannObserv/([A-Za-z0-9._-]+)/contents\b", cmd, re.I
         ):
-            found.append(m.group(1))
+            found.append(("fetch", m.group(1)))
     elif call.kind == "read":
         m = re.match(r"^/home/[^/]+/([^/]+)/", call.text)
         if m:
-            found.append(m.group(1))
-        found += re.findall(r"(?:^|/)\.\./([^/]+)/", call.text)
-    names = {re.sub(r"\.git$", "", n) for n in found}
-    return sorted(n for n in names if n in others)
+            found.append(("read", m.group(1)))
+        found += [("read", n) for n in re.findall(r"(?:^|/)\.\./([^/]+)/", call.text)]
+    pairs = {(route, re.sub(r"\.git$", "", n)) for route, n in found}
+    return sorted((route, n) for route, n in pairs if n in others)
 
 
 # --- the analysis ------------------------------------------------------------
@@ -1015,6 +1016,8 @@ def analyse(
             c[pre + "lookalike:explore"] += 1
         if call.siblings:
             c[pre + "sibling_access"] += 1
+            for route in sorted({route for route, _ in call.siblings}):
+                c[f"{pre}sibling:{route}"] += 1
         by_prompt[(call.rec.session, call.rec.prompt)].append(call)
 
     for every in by_prompt.values():
