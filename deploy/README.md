@@ -147,11 +147,25 @@ this whole issue exists to remove:
 
 | | |
 |---|---|
-| `qdrant-cert-renew.timer` | weekly, `Persistent=true`. Calls `tailscale cert --min-validity 720h`, and restarts Qdrant **only if the file changed** — a renewed cert that nothing reloaded is indistinguishable from a renewal that worked, until it isn't. |
-| `index-checkin.sh` | reports a cert with less than 22 days left as a finding (`CERT_DAYS_MIN=21`, in whole days, floored), so a *stopped renewal timer* becomes an alert rather than a surprise. |
+| `qdrant-cert-renew.timer` | weekly, `Persistent=true`. Calls `tailscale cert --min-validity 720h`, and logs `renewed` or `unchanged` with the file's expiry. **It doesn't restart Qdrant** (#52): Qdrant reloads the pair itself, below. |
+| `index-checkin.sh` | reports a cert with less than 22 days left as a finding (`CERT_DAYS_MIN=21`, in whole days, floored): `tls:cert` for the file, so a *stopped renewal timer* becomes an alert rather than a surprise, and `tls:served` for the one Qdrant presents on `index.taild0fb76.ts.net:6333`, so does a *reload that never happened*. |
 
 `Persistent=true` here and not on the check-in timer: a missed heartbeat is due
 again in ten minutes, a missed renewal window closes for good.
+
+**Reload, not restart (#52).** Qdrant re-reads `qdrant.crt` and `qdrant.key`
+on the first TLS handshake after its `cert_ttl`, which `qdrant-run.sh` sets to
+3600 s (the image's own default, pinned there). It opens both paths each time,
+so it follows `tailscale cert`'s write: a temporary file in the same directory,
+renamed over the old, the certificate first and then the key. Measured in a
+throwaway container of the pinned image on 2026-11-27, with a 5 s TTL. A pair
+replaced by rename, or written in place, was served within the TTL, with no
+restart. On an empty, missing or non-PEM file, Qdrant logged `Failed to refresh
+server TLS certificate, keeping current` and kept serving the old pair, where a
+*start* on an empty key exits. The restart this replaced cost about 19.5 s of
+search, unwindowed (measured 2026-11-23). `test_cert_renew.py` holds the TTL
+inside the margin above: a renewal is served at most one TTL late, still 22
+days clear of `tls:served`.
 
 **Why `--min-validity` (#49).** Without it, `tailscale cert` returns the cached
 certificate while it is valid and, once it is due (in ARI's suggested window,
@@ -168,10 +182,17 @@ with less left than the flag asks for fails its own test, and every run would
 issue another.
 
 **Known limits.**
-- A renewal restarts Qdrant when the timer fires, Monday 04:00–05:00 UTC:
-  outside the knob's windows, and not gated on `index-inflight.sh`, so a
-  client's index run in that hour sees Qdrant go away while it restarts. At
-  720h that is about every 60 days.
+- After a renewal Qdrant serves the old certificate for up to an hour, until
+  the first handshake past its TTL. That certificate still has 23 days or more.
+- **A mismatched pair loads.** Qdrant doesn't check that the key matches the
+  certificate. If a reload falls in the few milliseconds between `tailscale
+  cert`'s two renames (4 ms on 2026-11-23), Qdrant serves the new certificate
+  with the old key and every handshake fails, with nothing in its log, until
+  the next reload, within the hour. The odds are about one in a million a
+  renewal. The check-in hears it as `qdrant:collections` within ten minutes.
+  If it ever must end sooner, `sudo systemctl restart qdrant`, in a window or
+  with `index-inflight.sh` at 0. The old restart couldn't hit it, but a start
+  on such a pair breaks the same way.
 - A failed synchronous renewal (ACME, DNS-01, a rate limit) fails the unit,
   which nothing watches. One that hangs is killed at `TimeoutStartSec=10min`,
   so the timer can start the next. The next weekly run tries again. If every one fails,
@@ -252,7 +273,7 @@ Removing the stock image and pruning reclaimed **8.8 GB** (14 G → 5.2 G used).
 
 Qdrant has a second key, read-only, for the patching knob's `recovery` line (D22, #40). Knob commands run as the knob user, never root, and the admin key is root-only. The read-only key lists collections, reads their info, queries and counts. Every write gets 403. It lives in `qdrant.env`, beside the admin key, and in `/etc/socraticode/qdrant-ro.key`, `0640 root:qdrant-ro`. `/etc/socraticode` is `0750 root:qdrant-ro`, and `exedev` is the group's member. **It never goes to a client**: they keep the admin key ([installing-the-key.md](../docs/installing-the-key.md)).
 
-**Qdrant reads it only at a start, and any start takes it**: the Monday cert renewal, a crash, a Docker restart. So mint it in the window you restart in, never ahead of one. Minting and rotating are the same command:
+**Qdrant reads it only at a start, and any start takes it**: a crash, a Docker restart, a patching step. The cert renewal no longer restarts Qdrant (#52). So mint it in the window you restart in, never ahead of one. Minting and rotating are the same command:
 
 ```bash
 index-inflight.sh                               # 0, or wait

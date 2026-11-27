@@ -66,3 +66,13 @@ def test_the_image_bundle_parses() -> None:
 def test_the_image_trusts_no_distrusted_root() -> None:
     found = DISTRUSTED & set(trusted_cns(_image()))
     assert not found, f"{sorted(found)}: upgrade (deploy/README.md, Qdrant upgrade)"
+
+
+def test_the_certificate_is_reloaded_hourly() -> None:
+    """Qdrant reloads the pair from disk on the first handshake after
+    ``cert_ttl``, and a renewal counts on it: nothing restarts Qdrant for one
+    (#52). 3600 is the image's own default at v1.20.0, so setting it changes
+    nothing at the next start. Set here, an upgrade that changed the default
+    can't turn the reload off. ``test_cert_renew.py`` ties it to the
+    check-in's line."""
+    assert _envs().get("QDRANT__TLS__CERT_TTL") == "3600"

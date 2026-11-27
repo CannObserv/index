@@ -17,8 +17,15 @@ certificate has less than that left, and answers from its cache otherwise
   value less 7 days 1 hour and the value left. That low end must be at or
   above the check-in's line plus a day (it floors to whole days), or the
   alert opens before the run that would renew.
-- **A renewal restarts Qdrant, and nothing else does.** Qdrant reads the
-  certificate once, at start.
+- **Nothing restarts Qdrant (#52).** Qdrant reloads the pair from disk on the
+  first handshake after its ``cert_ttl``, which ``qdrant-run.sh`` pins, and
+  keeps the old pair when the new one won't load. A restart would cost about
+  19.5 s of search and take Qdrant down on a file it can't load. The ``systemctl``
+  stub catches any call. Measured in a throwaway container on 2026-11-27, with
+  the pinned image, both by rename and in place.
+- **The reload lands before the check-in's ``tls:served`` would open.** At
+  worst a renewal is served one ``cert_ttl`` late, so the TTL comes off the
+  same margin.
 
 The script runs from a copy whose host paths point into ``tmp_path``, with
 ``tailscale``, ``systemctl`` and ``openssl`` stubbed on ``PATH``. It never
@@ -131,9 +138,9 @@ def test_a_renewal_tailscale_has_due_is_collected_in_the_same_run(host: Path) ->
     result = _run(host, STUB_DAYS_LEFT="25")
     assert result.returncode == 0, result.stderr
     assert (host / "tls" / "qdrant.crt").read_text() == NEW
-    assert "renewed, restarting qdrant" in result.stdout
-    assert "now expires NEW-CERT" in result.stdout
-    assert _restarts(host) == ["restart qdrant"]
+    assert "renewed, expires NEW-CERT" in result.stdout
+    assert "Qdrant reloads it within its cert_ttl" in result.stdout
+    assert _restarts(host) == []
 
 
 def test_a_certificate_tailscale_already_renewed_is_installed(host: Path) -> None:
@@ -141,7 +148,8 @@ def test_a_certificate_tailscale_already_renewed_is_installed(host: Path) -> Non
     result = _run(host, STUB_CACHED="NEW-CERT")
     assert result.returncode == 0, result.stderr
     assert (host / "tls" / "qdrant.crt").read_text() == NEW
-    assert _restarts(host) == ["restart qdrant"]
+    assert "renewed, expires NEW-CERT" in result.stdout
+    assert _restarts(host) == []
 
 
 def test_a_fresh_certificate_is_unchanged_and_qdrant_is_left_alone(host: Path) -> None:
@@ -185,14 +193,16 @@ def test_the_call_asks_for_the_min_validity(host: Path) -> None:
     assert call.endswith(NAME)
 
 
-def _renews_before_the_checkin_alerts(min_validity_hours: int) -> bool:
+def _renews_before_the_checkin_alerts(min_validity_hours: int, reload_lag_hours: float = 0) -> bool:
     """A weekly timer with an hour's jitter renews when the certificate has
     between the min-validity less 7 days 1 hour, and the min-validity, left.
-    The timer is read, so a change to its cadence fails here."""
+    Qdrant serves it up to ``reload_lag_hours`` later (#52): the check-in's
+    ``tls:cert`` reads the file, its ``tls:served`` what Qdrant serves. The
+    timer is read, so a change to its cadence fails here."""
     timer = TIMER.read_text()
     assert re.search(r"^OnCalendar=Mon \d\d:\d\d$", timer, re.M), "not weekly any more"
     [jitter] = re.findall(r"^RandomizedDelaySec=(\d+)h$", timer, re.M)
-    worst_case = min_validity_hours - 7 * 24 - int(jitter)
+    worst_case = min_validity_hours - 7 * 24 - int(jitter) - reload_lag_hours
     # The check-in floors to whole days and alerts unless that is over its
     # line, so ``tls:cert`` opens with less than CERT_DAYS_MIN + 1 days left.
     return worst_case >= _checkin_line_hours() + 24
@@ -206,6 +216,33 @@ def test_a_min_validity_a_day_short_is_refused() -> None:
     """The control: 29 days renews with as little as 21 days 23 hours left,
     and the check-in has alerted from 22 (CR 1)."""
     assert not _renews_before_the_checkin_alerts(29 * 24)
+
+
+RUN = REPO_ROOT / "deploy" / "qdrant-run.sh"
+
+
+def _cert_ttl_hours() -> float:
+    """Qdrant's ``cert_ttl``, as ``qdrant-run.sh`` sets it. 0, or unset, turns
+    the reload off: then nothing would ever serve a renewal."""
+    [seconds] = re.findall(r"--env QDRANT__TLS__CERT_TTL=(\d+)\b", RUN.read_text())
+    assert int(seconds) > 0, "cert_ttl 0 never reloads"
+    return int(seconds) / 3600
+
+
+def test_qdrant_serves_a_renewal_before_the_checkin_alerts() -> None:
+    assert _renews_before_the_checkin_alerts(_min_validity_hours(), _cert_ttl_hours())
+
+
+def test_a_reload_lag_of_a_day_is_refused() -> None:
+    """The control: a day's TTL eats the 23 hours of margin."""
+    assert not _renews_before_the_checkin_alerts(_min_validity_hours(), 24)
+
+
+def test_the_script_restarts_nothing() -> None:
+    """A renewal is Qdrant's to reload (#52). The behaviour tests above stub
+    ``systemctl``; this one holds for a branch they don't reach."""
+    code = [ln for ln in SCRIPT.read_text().splitlines() if not ln.lstrip().startswith("#")]
+    assert not [ln for ln in code if "systemctl" in ln or "docker" in ln]
 
 
 SERVICE = REPO_ROOT / "deploy" / "qdrant-cert-renew.service"

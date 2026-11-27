@@ -28,6 +28,7 @@ QKEY="$(cat /etc/socraticode/qdrant.key)"
 # Qdrant is HTTPS since D14, and the cert's SAN is the FULL MagicDNS name only
 # -- https://index:6333 fails verification. Same URL every client uses.
 QURL="https://index.taild0fb76.ts.net:6333"
+QHOST="${QURL#https://}"
 
 # `fault` is co-status's `metadata.fault` (#10, CannObserv/status#28): an
 # `alert` whose key differs from the open fault's reports at once, so a new
@@ -110,6 +111,19 @@ fi
 CERT_DAYS_MIN=21
 days_left=$(( ( $(date -d "$(openssl x509 -in /etc/socraticode/tls/qdrant.crt -noout -enddate | cut -d= -f2)" +%s) - $(date +%s) ) / 86400 ))
 [ "$days_left" -gt "$CERT_DAYS_MIN" ] || add tls cert "certificate expires in ${days_left} day(s)"
+
+# And the one Qdrant serves, on the line above (#52). A renewal doesn't
+# restart Qdrant: Qdrant reloads the file within its cert_ttl. So the file
+# can be renewed while the served one ages, and only this hears it, three
+# weeks before clients fail. Nothing served is qdrant:collections, and so
+# is a pair that doesn't verify. The certificate still arrives, so it's
+# read here too. Bounded: the unit has no start timeout.
+served=$(timeout -k 5 15 openssl s_client -connect "$QHOST" -servername "${QHOST%:*}" </dev/null 2>/dev/null \
+  | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2) || true
+if [ -n "$served" ]; then
+  served_left=$(( ( $(date -d "$served" +%s) - $(date +%s) ) / 86400 ))
+  [ "$served_left" -gt "$CERT_DAYS_MIN" ] || add tls served "served certificate expires in ${served_left} day(s)"
+fi
 
 # The collector (D21, #33): an empty export, on the port clients send to. It
 # is answered 200 and writes nothing. Down is a finding, never unknown:

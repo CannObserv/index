@@ -9,15 +9,15 @@ window Tue 05:15-11:45
 window Wed 05:15-11:45
 window Thu 05:15-11:45
 
-# qdrant-cert-renew.timer: Mon 04:00 plus up to 1h RandomizedDelaySec; it
-# restarts Qdrant when the certificate changed.
+# qdrant-cert-renew.timer: Mon 04:00 plus up to 1h RandomizedDelaySec. It
+# renews through tailscaled, which a step's restart would cut short. It no
+# longer restarts Qdrant: Qdrant reloads the certificate itself (#52).
 quiet 04:00-05:05 Mon
 
 service qdrant.service
 service ollama.service
 # The collector for the cohort's Claude Code telemetry (D21, #33).
 service otelcol.service
-restarter qdrant-cert-renew.timer
 
 # The Ollama image is this repo's to update, never a patching run's (#11): a
 # new engine can change every vector, so it's an engine change (deploy/README.md).

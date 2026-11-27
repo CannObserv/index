@@ -44,6 +44,16 @@ are co-status's credentials, so they are named for it: ``STATUS_API_KEY`` and
   nothing said, is ``links:check``: a broken check is heard. It runs only
   once the authenticated read returned 200, so a down store is one finding.
 
+- **What Qdrant serves, beside what the file holds (#52).** A renewal no
+  longer restarts Qdrant: Qdrant reloads the pair within its ``cert_ttl``.
+  ``tls:cert`` reads the file, so it hears a stopped renewal timer;
+  ``tls:served`` reads the certificate Qdrant presents, on the name and port
+  clients use, against the same line, so it hears a reload that never
+  happened, three weeks before clients fail. Nothing served is no
+  ``tls:served`` finding: ``qdrant:collections`` is that one. A served pair
+  that doesn't verify is ``qdrant:collections`` too: the certificate still
+  arrives, so its expiry is read.
+
 The script runs from a copy whose host paths point into ``tmp_path``, with
 ``curl`` and ``openssl`` stubbed on ``PATH``. Nothing leaves the test, and on
 co-index it never touches the live timer's files.
@@ -92,7 +102,24 @@ def host(tmp_path: Path) -> Path:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     _stub(bin_dir / "tailnet-bind.sh", "echo 100.64.0.1\n")
-    _stub(bin_dir / "openssl", "echo 'notAfter=Jan  1 00:00:00 2099 GMT'\n")
+    # openssl, logging its argv. ``s_client`` prints the served certificate
+    # (a marker) unless STUB_SERVED=none: nothing answered. ``x509 -in <file>``
+    # prints the file's expiry, and ``x509`` on stdin the served one's, each
+    # from its file beside CURL_LOG (2099 without one). On empty stdin it
+    # fails, as openssl does.
+    _stub(
+        bin_dir / "openssl",
+        'printf "%s\\n" "$*" >> "$CURL_LOG.openssl"\n'
+        "if [[ $1 == s_client ]]; then\n"
+        "  cat > /dev/null\n"
+        "  [[ ${STUB_SERVED:-} == none ]] || echo SERVED-CERT\n"
+        "  exit 0\n"
+        "fi\n"
+        'in=; prev=; for a in "$@"; do [[ $prev != -in ]] || in=$a; prev=$a; done\n'
+        'if [[ -n $in ]]; then end="$CURL_LOG.file-end"\n'
+        'else grep -q SERVED-CERT || exit 1; end="$CURL_LOG.served-end"; fi\n'
+        'echo "notAfter=$(cat "$end" 2>/dev/null || echo "Jan  1 00:00:00 2099 GMT")"\n',
+    )
     # Logs its argv, prints STUB_FP_OUT, exits STUB_FP_EXIT (0: no drift).
     _stub(
         bin_dir / "engine-fingerprint.py",
@@ -258,11 +285,12 @@ def _body(host: Path) -> dict:
     return json.loads((host / "curl.log.body").read_text())
 
 
-def _expires_in(host: Path, days: int) -> None:
+def _expires_in(host: Path, days: int, which: str = "file") -> None:
+    """The file's certificate, or the one Qdrant serves, expires in ``days``."""
     # The script floors seconds to whole days: half a day's margin makes that
     # `days`, however long the run takes.
     when = datetime.now(UTC) + timedelta(days=days, hours=12)
-    _stub(host / "bin" / "openssl", f"echo 'notAfter={when:%b %d %H:%M:%S %Y} GMT'\n")
+    (host / f"curl.log.{which}-end").write_text(f"{when:%b %d %H:%M:%S %Y} GMT\n")
 
 
 @pytest.mark.parametrize(("days", "alerts"), [(21, True), (22, False)])
@@ -277,6 +305,60 @@ def test_the_cert_finding_opens_under_the_line_plus_a_day(
     _expires_in(host, days)
     assert _run(host, healthy=True).returncode == 0
     assert ("tls:cert" in _body(host)["metadata"]["fault"]) is alerts
+
+
+@pytest.mark.parametrize(("days", "alerts"), [(21, True), (22, False)])
+def test_the_served_finding_opens_on_the_same_line(host: Path, days: int, alerts: bool) -> None:
+    _write(host, "status.env", STATUS_ENV)
+    _expires_in(host, days, "served")
+    assert _run(host, healthy=True).returncode == 0
+    assert _fault(host) == (["tls:served"] if alerts else [])
+
+
+def test_a_served_certificate_the_reload_left_behind_is_heard(host: Path) -> None:
+    """#52's case: the file was renewed, and Qdrant still serves the old one.
+    ``tls:cert`` reads the file and stays quiet."""
+    _write(host, "status.env", STATUS_ENV)
+    _expires_in(host, 85)
+    _expires_in(host, 10, "served")
+    assert _run(host, healthy=True).returncode == 0
+    assert _fault(host) == ["tls:served"]
+    assert _finding(host, "tls:served")["message"] == "served certificate expires in 10 day(s)"
+
+
+def test_the_served_certificate_is_read_where_clients_connect(host: Path) -> None:
+    """The name clients use, by SNI, and its port: the same URL as the
+    authenticated read."""
+    _write(host, "status.env", STATUS_ENV)
+    assert _run(host, healthy=True).returncode == 0
+    calls = (host / "curl.log.openssl").read_text().splitlines()
+    [call] = [c for c in calls if c.startswith("s_client ")]
+    words = call.split()
+    assert words[words.index("-connect") + 1] == "index.taild0fb76.ts.net:6333"
+    assert words[words.index("-servername") + 1] == "index.taild0fb76.ts.net"
+
+
+def test_nothing_served_is_the_stores_finding_not_this_ones(host: Path) -> None:
+    """A down Qdrant is ``qdrant:collections``. The check-in still goes, and
+    the file's expiry is still read."""
+    _write(host, "status.env", STATUS_ENV)
+    _expires_in(host, 5)
+    assert _run(host, STUB_SERVED="none").returncode == 0
+    fault = _fault(host)
+    assert "qdrant:collections" in fault, "the control: the stubbed Qdrant answers nothing"
+    assert "tls:cert" in fault
+    assert "tls:served" not in fault
+
+
+def test_the_served_read_is_bounded() -> None:
+    """The unit has no start timeout, so a handshake that hangs would
+    silence the whole check-in."""
+    [line] = [
+        ln
+        for ln in SCRIPT.read_text().splitlines()
+        if "s_client" in ln and not ln.lstrip().startswith("#")
+    ]
+    assert re.match(r"\S+=\$\(timeout (-k \d+ )?\d+ openssl s_client ", line.strip()), line
 
 
 def test_an_alert_keys_its_fault_by_check_and_subject(host: Path) -> None:

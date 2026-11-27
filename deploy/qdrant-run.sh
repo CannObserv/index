@@ -34,13 +34,18 @@ docker rm -f qdrant >/dev/null 2>&1 || true
 # Telemetry off (#13): it was Qdrant's only routine outbound TLS, through roots
 # the image still trusted after the eMudhra compromise (processor#66).
 #
-# These four are not secret and so live here rather than in the env-file,
+# cert_ttl (#52): Qdrant reloads the pair from disk on the first handshake
+# after this many seconds, so a renewal needs no restart. 3600 is the image's
+# own default; set here so an upgrade can't turn the reload off.
+#
+# These five are not secret and so live here rather than in the env-file,
 # which exists to keep the API key out of argv.
 exec docker run --rm --name qdrant \
   --env-file /etc/socraticode/qdrant.env \
   --env QDRANT__SERVICE__ENABLE_TLS=1 \
   --env QDRANT__TLS__CERT=/tls/qdrant.crt \
   --env QDRANT__TLS__KEY=/tls/qdrant.key \
+  --env QDRANT__TLS__CERT_TTL=3600 \
   --env QDRANT__TELEMETRY_DISABLED=true \
   --publish "${ADDR}:6333:6333" \
   --volume /var/lib/qdrant:/qdrant/storage \

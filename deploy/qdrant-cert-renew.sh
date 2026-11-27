@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Renew the Qdrant TLS cert, and restart Qdrant only if it actually changed.
+# Renew the Qdrant TLS cert. Qdrant reloads it itself, within its cert_ttl (#52).
 #
 # Tailscale's certs are Let's Encrypt: 90 days. Tailscale renews automatically
 # ONLY when it also owns the install location -- its own docs are explicit that
@@ -45,8 +45,10 @@ if [ "$before" = "$after" ]; then
   exit 0
 fi
 
-# Qdrant reads the cert once at start. A renewed file on disk that nothing
-# reloaded is indistinguishable from a renewal that worked, until it isn't.
-echo "qdrant-cert-renew: renewed, restarting qdrant"
-systemctl restart qdrant
-echo "qdrant-cert-renew: now expires $(openssl x509 -in "$CRT" -noout -enddate | cut -d= -f2)"
+# No restart (#52). Qdrant reloads the pair from disk on the first handshake
+# after its cert_ttl, which qdrant-run.sh sets to an hour, and keeps serving
+# the old pair if the new one won't load. A restart cost about 19.5 s of
+# search, unwindowed, and a start on a file it can't load exits. Whether the
+# reload happened is index-checkin's tls:served, which reads what Qdrant
+# serves.
+echo "qdrant-cert-renew: renewed, expires $(openssl x509 -in "$CRT" -noout -enddate | cut -d= -f2); Qdrant reloads it within its cert_ttl"
