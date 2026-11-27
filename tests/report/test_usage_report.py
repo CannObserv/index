@@ -404,6 +404,14 @@ def test_a_prefixs_valued_options_are_skipped(cmd) -> None:
     assert _found(cmd) == [("grep", "foo", False)]
 
 
+@pytest.mark.parametrize(
+    "cmd", ["git -C /x grep -n foo", "git --no-pager -c core.x=1 grep foo", "git -P grep foo"]
+)
+def test_gits_own_options_come_before_grep(cmd) -> None:
+    """CR 9: ``git -C dir grep`` was missed."""
+    assert _found(cmd) == [("git grep", "foo", False)]
+
+
 def test_grep_flags_are_read() -> None:
     [s] = ur.bash_searches("grep -rnFw 'x: y' .")
     assert s.fixed and s.word

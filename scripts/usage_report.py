@@ -502,8 +502,9 @@ def bash_searches(cmd: str) -> list[Search] | None:
         if not argv:
             continue
         head = os.path.basename(argv[0])
-        if head == "git" and len(argv) > 1 and argv[1] == "grep":
-            pats, _, flags = _grep_args(argv[2:], _GREP_VALUED, _GREP_LONG_VALUED)
+        sub = _skip_options(argv[1:], {"C", "c"}) if head == "git" else []
+        if head == "git" and sub[:1] == ["grep"]:
+            pats, _, flags = _grep_args(sub[1:], _GREP_VALUED, _GREP_LONG_VALUED)
             found += [_search("git grep", p, False, flags) for p in pats]
         elif head in ("grep", "egrep", "fgrep"):
             pats, paths, flags = _grep_args(argv[1:], _GREP_VALUED, _GREP_LONG_VALUED)
