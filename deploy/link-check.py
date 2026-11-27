@@ -46,9 +46,12 @@ STALE_H = 24
 RAW_TIMEOUT = 10
 QDRANT_TIMEOUT = 5
 MAX_BYTES = 64 * 1024
-# urllib's timeouts are per socket call, and a name lookup has none: these
-# bound each phase whole, and expire as unknown. The check-in's `timeout`
-# outlasts both, and is a broken check (test_link_check.py).
+# urllib's timeouts are per socket call: these bound each phase whole. The
+# refresh's expires as a failed refresh (the cache kept, no finding), and
+# Qdrant's as exit 2. Neither can cut a name lookup short: glibc retries its
+# poll through the signal, so a phase can overrun by one slow lookup. The
+# check-in's `timeout` (120 s) leaves 50 s beyond both for that, and past it
+# is a broken check (CR 14, test_link_check.py).
 REFRESH_BUDGET = 40
 QDRANT_BUDGET = 30
 STAMP = "%Y-%m-%dT%H:%M:%SZ"
