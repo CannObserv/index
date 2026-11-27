@@ -25,11 +25,13 @@ Private repos are hand-listed in cohort.json (D18: no token read) and never
 fetched. Stdlib only.
 """
 
+import contextlib
 import http.client
 import json
 import os
 import posixpath
 import re
+import signal
 import ssl
 import sys
 import tempfile
@@ -43,6 +45,11 @@ STALE_H = 24
 RAW_TIMEOUT = 10
 QDRANT_TIMEOUT = 5
 MAX_BYTES = 64 * 1024
+# urllib's timeouts are per socket call, and a name lookup has none: these
+# bound each phase whole, and expire as unknown. The check-in's `timeout`
+# outlasts both, and is a broken check (test_link_check.py).
+REFRESH_BUDGET = 40
+QDRANT_BUDGET = 30
 STAMP = "%Y-%m-%dT%H:%M:%SZ"
 # A projectId goes into Qdrant's URL: no `/`, and no leading dot for `..`.
 COLLECTION_ID = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]*")
@@ -61,6 +68,22 @@ class Broken(Exception):
 
 class RefreshFailed(Exception):
     """GitHub didn't answer as a file or a 404: keep the old cache."""
+
+
+@contextlib.contextmanager
+def _budget(seconds: float, expired: type[Exception]):
+    """Raise ``expired`` in this, the main thread, after ``seconds``."""
+
+    def expire(signum: int, frame: object) -> None:
+        raise expired(f"over its {seconds} s budget")
+
+    previous = signal.signal(signal.SIGALRM, expire)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def _subject(text: str) -> str:
@@ -151,11 +174,12 @@ def _refresh(cohort: dict, cache: dict | None, now: datetime, path: str) -> dict
             return cache
     stamp = now.strftime(STAMP)
     try:
-        repos = {
-            e["repo"]: _fetch(cohort["raw"], e["repo"])
-            for e in cohort["repos"]
-            if not e.get("private")
-        }
+        with _budget(REFRESH_BUDGET, RefreshFailed):
+            repos = {
+                e["repo"]: _fetch(cohort["raw"], e["repo"])
+                for e in cohort["repos"]
+                if not e.get("private")
+            }
         cache = {"fetched_at": stamp, "attempted_at": stamp, "raw": cohort["raw"], "repos": repos}
     except RefreshFailed as e:
         print(f"link-check: refresh failed, cache kept: {e}", file=sys.stderr)
@@ -276,7 +300,8 @@ def main(argv: list[str]) -> int:
             cohort = json.load(f)
         now = datetime.now(UTC)
         cache = _refresh(cohort, _read_cache(cache_file), now, cache_file)
-        found = _findings(cohort, cache, now, Store(url, key))
+        with _budget(QDRANT_BUDGET, Unknown):
+            found = _findings(cohort, cache, now, Store(url, key))
     except Unknown as e:
         print(f"link-check: unknown, Qdrant didn't answer: {e}", file=sys.stderr)
         return 2

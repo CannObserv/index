@@ -66,9 +66,12 @@ open=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${QURL}/collections
 # this fetches nothing on most ticks. Exit 1 is one `subject<TAB>message` line
 # per finding; 2 is unknown, no finding (Qdrant blinked since the read above);
 # anything else, or 1 with nothing said, is the check broken, and heard.
+# Its own budgets expire as unknown well inside the `timeout`, which bounds
+# the rest (CR 4): the unit has no start timeout, and a hang here would
+# silence the whole check-in.
 if [ "$code" = "200" ]; then
   rc=0
-  links=$(/usr/local/bin/link-check.py check "$QURL" /etc/socraticode/qdrant.key \
+  links=$(timeout -k 5 120 /usr/local/bin/link-check.py check "$QURL" /etc/socraticode/qdrant.key \
     /usr/local/share/co-index/cohort.json /var/cache/co-index/links.json) || rc=$?
   if [ "$rc" -eq 1 ] && [ -n "$links" ]; then
     while IFS=$'\t' read -r subject message; do

@@ -34,11 +34,14 @@ that each declared link names a collection that exists and holds points.
 Qdrant and GitHub are one stub HTTP server in a thread; nothing leaves the test.
 """
 
+import importlib.util
 import json
 import os
+import re
 import stat
 import subprocess
 import threading
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -64,6 +67,8 @@ class World:
         # "short": a Content-Length the body falls short of; "garbage": no HTTP at all
         self.raw_broken: dict[str, str] = {}
         self.qdrant_garbage = False
+        self.raw_delay = 0.0
+        self.qdrant_delay = 0.0
         self.requests: list[tuple[str, str, str]] = []
 
     def config(self, repo: str, project_id: str | None = None, links: list[str] | None = None):
@@ -96,6 +101,7 @@ def world() -> Iterator[tuple[World, str]]:
 
         def _qdrant(self) -> bool:
             """False when the request is refused, having answered it."""
+            time.sleep(state.qdrant_delay)
             if state.qdrant_garbage:
                 self.wfile.write(b"not http\r\n\r\n")
                 return False
@@ -113,6 +119,7 @@ def world() -> Iterator[tuple[World, str]]:
                 repo, ref, name = self.path.removeprefix("/raw/").split("/", 2)
                 assert (ref, name) == ("HEAD", ".socraticode.json"), self.path
                 assert "Authorization" not in self.headers, "fetched with a credential"
+                time.sleep(state.raw_delay)
                 if state.raw_broken.get(repo) == "garbage":
                     self.wfile.write(b"not http\r\n\r\n")
                     return
@@ -725,3 +732,70 @@ def test_usage_is_exit_3(tmp_path: Path) -> None:
     result = subprocess.run([str(SCRIPT)], capture_output=True, text=True)
     assert result.returncode == 3
     assert "usage" in result.stderr
+
+
+# --- its budgets (CR 4) -----------------------------------------------------
+
+
+def _in_process(tmp_path: Path, base: str, **budgets: float) -> tuple[int, float]:
+    """``main``, run here with its budgets shrunk: the real ones are tens of
+    seconds. Returns its exit and how long it took."""
+    spec = importlib.util.spec_from_file_location("link_check", SCRIPT)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    for name, seconds in budgets.items():
+        setattr(module, name, seconds)
+    key = tmp_path / "qdrant.key"
+    key.write_text(KEY)
+    cohort = _cohort(tmp_path, base)
+    argv = [
+        "link-check.py",
+        "check",
+        base,
+        str(key),
+        str(cohort),
+        str(tmp_path / "cache" / "links.json"),
+    ]
+    start = time.monotonic()
+    code = module.main(argv)
+    return code, time.monotonic() - start
+
+
+def test_the_budgets_fit_inside_the_checkins_bound() -> None:
+    """The check-in kills it at its ``timeout``, which is a broken check;
+    each budget is unknown instead, so both must expire first."""
+    spec = importlib.util.spec_from_file_location("link_check", SCRIPT)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    checkin = (REPO_ROOT / "deploy" / "index-checkin.sh").read_text()
+    [bound] = re.findall(r"timeout -k \d+ (\d+) /usr/local/bin/link-check\.py", checkin)
+    assert module.REFRESH_BUDGET + module.QDRANT_BUDGET < int(bound) < 600
+
+
+def test_a_slow_github_is_a_failed_refresh_within_its_budget(
+    world: tuple[World, str], tmp_path: Path
+) -> None:
+    """urllib's timeout is per socket call, not per request: a server that
+    answers slowly enough holds the check-in, and the dead-man's timer
+    blames the whole host."""
+    state, base = world
+    _healthy(state)
+    _write_cache(tmp_path, fetched=7, attempted=7, repos={})
+    state.raw_delay = 3
+    code, took = _in_process(tmp_path, base, REFRESH_BUDGET=0.5)
+    assert code == 0
+    assert took < 2.5
+    assert _cache(tmp_path)["fetched_at"] == _iso(7)
+
+
+def test_a_slow_qdrant_is_unknown_within_its_budget(
+    world: tuple[World, str], tmp_path: Path
+) -> None:
+    state, base = world
+    _healthy(state)
+    state.qdrant_delay = 3
+    code, took = _in_process(tmp_path, base, QDRANT_BUDGET=0.5)
+    assert code == 2
+    assert took < 2.5
