@@ -1395,6 +1395,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--sweep-reads", type=int, default=SWEEP_READS)
     parser.add_argument("--agreement-threshold", type=float, default=THRESHOLD)
     try:
+        if os.geteuid() == 0:
+            raise Usage("refusing to run as root: read through sudo, report as yourself")
         args = parser.parse_args(argv)
         markers = load_markers(args.markers)
         try:

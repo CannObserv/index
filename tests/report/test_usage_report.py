@@ -1202,6 +1202,16 @@ def test_an_agreement_threshold_outside_0_to_1_is_a_usage_error(tmp_path, value)
     assert res.returncode == 64
 
 
+def test_it_refuses_to_run_as_root(tmp_path, monkeypatch, capsys) -> None:
+    """CR 42: documented everywhere, enforced nowhere. Root would leave
+    root-owned real calls in data/; only the read goes through sudo."""
+    monkeypatch.setattr(ur.os, "geteuid", lambda: 0)
+    out = tmp_path / "data"
+    assert ur.main(["-", "--out", str(out)]) == 64
+    assert "root" in capsys.readouterr().err
+    assert not out.exists()
+
+
 def test_no_records_writes_nothing_and_exits_1(tmp_path) -> None:
     out = tmp_path / "data"
     res = _run("", "-", out=out)
