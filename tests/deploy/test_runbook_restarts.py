@@ -47,7 +47,7 @@ REMOVED = "Qdrant and Ollama don't restart: read their `NRestarts` before and af
 
 def test_the_sentence_53_removed_is_refused() -> None:
     """The control: put back, the rule finds it, and only it."""
-    text = RUNBOOK.read_text().replace("was (#53).", f"was (#53). {REMOVED}")
+    text = RUNBOOK.read_text().replace("**First install.**", f"{REMOVED}\n\n**First install.**")
     assert REMOVED in text, "the control's control: it went in"
     assert _proofs_by_nrestarts(text) == [REMOVED]
 
