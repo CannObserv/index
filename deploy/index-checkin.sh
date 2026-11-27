@@ -109,20 +109,25 @@ fi
 # cohort. So the expiry is reported here too, well before it bites. The renew
 # script's MIN_VALIDITY_DAYS renews before this line (test_cert_renew.py).
 CERT_DAYS_MIN=21
-days_left=$(( ( $(date -d "$(openssl x509 -in /etc/socraticode/tls/qdrant.crt -noout -enddate | cut -d= -f2)" +%s) - $(date +%s) ) / 86400 ))
+file_end=$(openssl x509 -in /etc/socraticode/tls/qdrant.crt -noout -enddate | cut -d= -f2)
+days_left=$(( ( $(date -d "$file_end" +%s) - $(date +%s) ) / 86400 ))
 [ "$days_left" -gt "$CERT_DAYS_MIN" ] || add tls cert "certificate expires in ${days_left} day(s)"
 
-# And the one Qdrant serves, on the line above (#52). A renewal doesn't
-# restart Qdrant: Qdrant reloads the file within its cert_ttl. So the file
-# can be renewed while the served one ages, and only this hears it, three
-# weeks before clients fail. Nothing served is qdrant:collections, and so
-# is a pair that doesn't verify. The certificate still arrives, so it's
-# read here too. Bounded: the unit has no start timeout.
+# And the one Qdrant serves, when it isn't the file's, on the same line
+# (#52). A renewal doesn't restart Qdrant: Qdrant reloads the file within its
+# cert_ttl. So the file can be renewed while the served one ages, and only
+# this hears it, three weeks before clients fail. The same certificate in
+# both is tls:cert's alone. Nothing served is qdrant:collections, and so is a
+# pair that doesn't verify: its certificate still arrives, and is read here
+# too. Nothing read from a store that just answered 200 is this check broken,
+# and heard. Bounded: the unit has no start timeout.
 served=$(timeout -k 5 15 openssl s_client -connect "$QHOST" -servername "${QHOST%:*}" </dev/null 2>/dev/null \
   | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2) || true
-if [ -n "$served" ]; then
+if [ -n "$served" ] && [ "$served" != "$file_end" ]; then
   served_left=$(( ( $(date -d "$served" +%s) - $(date +%s) ) / 86400 ))
   [ "$served_left" -gt "$CERT_DAYS_MIN" ] || add tls served "served certificate expires in ${served_left} day(s)"
+elif [ -z "$served" ] && [ "$code" = "200" ]; then
+  add tls served "no certificate read from the store"
 fi
 
 # The collector (D21, #33): an empty export, on the port clients send to. It

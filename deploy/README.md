@@ -148,7 +148,7 @@ this whole issue exists to remove:
 | | |
 |---|---|
 | `qdrant-cert-renew.timer` | weekly, `Persistent=true`. Calls `tailscale cert --min-validity 720h`, and logs `renewed` or `unchanged` with the file's expiry. **It doesn't restart Qdrant** (#52): Qdrant reloads the pair itself, below. |
-| `index-checkin.sh` | reports a cert with less than 22 days left as a finding (`CERT_DAYS_MIN=21`, in whole days, floored): `tls:cert` for the file, so a *stopped renewal timer* becomes an alert rather than a surprise, and `tls:served` for the one Qdrant presents on `index.taild0fb76.ts.net:6333`, so does a *reload that never happened*. |
+| `index-checkin.sh` | reports a cert with less than 22 days left as a finding (`CERT_DAYS_MIN=21`, in whole days, floored): `tls:cert` for the file, so a *stopped renewal timer* becomes an alert rather than a surprise, and `tls:served` for the one Qdrant presents on `index.taild0fb76.ts.net:6333` when it isn't the file's, so does a *reload that never happened*. |
 
 `Persistent=true` here and not on the check-in timer: a missed heartbeat is due
 again in ten minutes, a missed renewal window closes for good.
@@ -165,7 +165,24 @@ server TLS certificate, keeping current` and kept serving the old pair, where a
 *start* on an empty key exits. The restart this replaced cost about 19.5 s of
 search, unwindowed (measured 2026-11-23). `test_cert_renew.py` holds the TTL
 inside the margin above: a renewal is served at most one TTL late, still 22
-days clear of `tls:served`.
+hours clear of `tls:served`'s line.
+
+**When `tls:served` opens.** Qdrant serves a certificate that isn't the
+file's, and it's inside the line.
+1. `sudo docker logs qdrant 2>&1 | grep 'Failed to refresh'` names a file
+   Qdrant can't load. Compare the expiries: `sudo openssl x509 -in
+   /etc/socraticode/tls/qdrant.crt -noout -enddate`, and `openssl s_client
+   -connect index.taild0fb76.ts.net:6333 -servername index.taild0fb76.ts.net
+   </dev/null 2>/dev/null | openssl x509 -noout -enddate`.
+2. Repair the files with `sudo systemctl start qdrant-cert-renew.service`,
+   and wait an hour: Qdrant reloads at its next handshake past the TTL.
+3. If it still serves the old certificate, `sudo systemctl restart qdrant`,
+   in a window or with `index-inflight.sh` at 0. A start on a file it can't
+   load exits, so do step 2 first.
+
+Its message `no certificate read from the store` means the read failed while
+the store answered 200 over the same URL: the check is broken, not the
+certificate.
 
 **Why `--min-validity` (#49).** Without it, `tailscale cert` returns the cached
 certificate while it is valid and, once it is due (in ARI's suggested window,
@@ -183,7 +200,7 @@ issue another.
 
 **Known limits.**
 - After a renewal Qdrant serves the old certificate for up to an hour, until
-  the first handshake past its TTL. That certificate still has 23 days or more.
+  the first handshake past its TTL. That certificate still has almost 23 days.
 - **A mismatched pair loads.** Qdrant doesn't check that the key matches the
   certificate. If a reload falls in the few milliseconds between `tailscale
   cert`'s two renames (4 ms on 2026-11-23), Qdrant serves the new certificate

@@ -48,11 +48,13 @@ are co-status's credentials, so they are named for it: ``STATUS_API_KEY`` and
   longer restarts Qdrant: Qdrant reloads the pair within its ``cert_ttl``.
   ``tls:cert`` reads the file, so it hears a stopped renewal timer;
   ``tls:served`` reads the certificate Qdrant presents, on the name and port
-  clients use, against the same line, so it hears a reload that never
-  happened, three weeks before clients fail. Nothing served is no
-  ``tls:served`` finding: ``qdrant:collections`` is that one. A served pair
-  that doesn't verify is ``qdrant:collections`` too: the certificate still
-  arrives, so its expiry is read.
+  clients use, against the same line, when it isn't the file's: it hears a
+  reload that never happened, three weeks before clients fail. The same
+  certificate in both is ``tls:cert``'s alone, one cause, one finding.
+  Nothing served is ``qdrant:collections``, not this one. A served pair that
+  doesn't verify is ``qdrant:collections`` too, and the certificate still
+  arrives, so its expiry is read. Nothing read from a store that answered
+  200 is the check broken: ``tls:served``, heard.
 
 The script runs from a copy whose host paths point into ``tmp_path``, with
 ``curl`` and ``openssl`` stubbed on ``PATH``. Nothing leaves the test, and on
@@ -103,7 +105,10 @@ def host(tmp_path: Path) -> Path:
     bin_dir.mkdir()
     _stub(bin_dir / "tailnet-bind.sh", "echo 100.64.0.1\n")
     # openssl, logging its argv. ``s_client`` prints the served certificate
-    # (a marker) unless STUB_SERVED=none: nothing answered. ``x509 -in <file>``
+    # (a marker) and exits 0. STUB_SERVED=none: nothing answered, nothing
+    # printed, exit 1. STUB_SERVED=unverified: the certificate arrived and the
+    # handshake failed after it, as a mismatched pair does: printed, exit 1
+    # (measured with this host's openssl, #52). ``x509 -in <file>``
     # prints the file's expiry, and ``x509`` on stdin the served one's, each
     # from its file beside CURL_LOG (2099 without one). On empty stdin it
     # fails, as openssl does.
@@ -112,7 +117,9 @@ def host(tmp_path: Path) -> Path:
         'printf "%s\\n" "$*" >> "$CURL_LOG.openssl"\n'
         "if [[ $1 == s_client ]]; then\n"
         "  cat > /dev/null\n"
-        "  [[ ${STUB_SERVED:-} == none ]] || echo SERVED-CERT\n"
+        "  [[ ${STUB_SERVED:-} == none ]] && exit 1\n"
+        "  echo SERVED-CERT\n"
+        "  [[ ${STUB_SERVED:-} == unverified ]] && exit 1\n"
         "  exit 0\n"
         "fi\n"
         'in=; prev=; for a in "$@"; do [[ $prev != -in ]] || in=$a; prev=$a; done\n'
@@ -336,6 +343,38 @@ def test_the_served_certificate_is_read_where_clients_connect(host: Path) -> Non
     words = call.split()
     assert words[words.index("-connect") + 1] == "index.taild0fb76.ts.net:6333"
     assert words[words.index("-servername") + 1] == "index.taild0fb76.ts.net"
+
+
+def test_a_stopped_timer_is_one_finding_not_two(host: Path) -> None:
+    """The file and the served certificate are the same one: that's
+    ``tls:cert``'s. ``tls:served`` is a served certificate that isn't the
+    file's."""
+    _write(host, "status.env", STATUS_ENV)
+    _expires_in(host, 5)
+    (host / "curl.log.served-end").write_text((host / "curl.log.file-end").read_text())
+    assert _run(host, healthy=True).returncode == 0
+    assert _fault(host) == ["tls:cert"]
+
+
+def test_a_handshake_that_fails_after_the_certificate_still_reads_it(host: Path) -> None:
+    """A mismatched pair: the certificate arrives, the handshake fails and
+    ``s_client`` exits 1. The store's read fails too, and both are heard."""
+    _write(host, "status.env", STATUS_ENV)
+    _expires_in(host, 85)
+    _expires_in(host, 10, "served")
+    assert _run(host, STUB_SERVED="unverified").returncode == 0
+    fault = _fault(host)
+    assert "qdrant:collections" in fault, "the control"
+    assert "tls:served" in fault
+
+
+def test_no_certificate_read_from_a_store_that_answered_is_heard(host: Path) -> None:
+    """The authenticated read returned 200 over the same URL, so an empty
+    read is the check broken: heard, as the link check's is."""
+    _write(host, "status.env", STATUS_ENV)
+    assert _run(host, healthy=True, STUB_SERVED="none").returncode == 0
+    assert _fault(host) == ["tls:served"]
+    assert _finding(host, "tls:served")["message"] == "no certificate read from the store"
 
 
 def test_nothing_served_is_the_stores_finding_not_this_ones(host: Path) -> None:
