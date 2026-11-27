@@ -739,6 +739,14 @@ def test_a_subagents_calls_count_apart_from_the_main_threads() -> None:
     assert count(r, "followup:grep_after_search") == 0
 
 
+def test_a_subagents_api_requests_count_apart() -> None:
+    """CR 40: every other measure split them; api_requests didn't."""
+    sub = api()
+    sub["agent_id"] = "a1"
+    r = analyse([api(), sub])
+    assert count(r, "api_requests") == 1 and count(r, "subagent:api_requests") == 1
+
+
 def test_a_subagents_reads_are_no_read_sweep_of_the_parent() -> None:
     r = analyse([_read(p, agent="a1") for p in "abc"])
     assert count(r, "lookalike:read_sweep") == 0

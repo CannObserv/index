@@ -1015,7 +1015,8 @@ def analyse(
                 share = c.get(pre + "codebase_search_linked", 0) / c[pre + "index:codebase_search"]
                 c[pre + "codebase_search_linked_share"] = round(share, 3)
     for r in apis:
-        counts[(r.host, r.repo, period(r))]["api_requests"] += 1
+        pre = SUBAGENT if r.get("agent_id") else ""
+        counts[(r.host, r.repo, period(r))][pre + "api_requests"] += 1
 
     classification = []
     for scope_key, scope in _scopes(calls, period):
