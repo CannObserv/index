@@ -1373,10 +1373,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--markers", type=Path, default=REPO_ROOT / "docs" / "usage-markers.json")
     parser.add_argument("--cohort", type=Path, default=REPO_ROOT / "deploy" / "cohort.json")
     parser.add_argument(
-        "--labels", type=Path, help="the operator's labels (default data/labels.csv)"
+        "--labels", type=Path, help="the operator's labels (default <out>/labels.csv)"
     )
     parser.add_argument(
-        "--model-labels", type=Path, help="the model's (default data/ambiguous-labels.csv)"
+        "--model-labels", type=Path, help="the model's (default <out>/ambiguous-labels.csv)"
     )
     parser.add_argument("--sample", type=int, help="write N grep-like calls to label-sample.csv")
     parser.add_argument("--seed", type=int, default=0)

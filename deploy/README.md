@@ -609,7 +609,7 @@ stays until the next `--sample`.
 | `report.md` | the summary: counts, classification beside the agreement line, efficiency, with the caveats | no |
 | `counts.csv` | per host, repo and period: `measure`, `value`, including `codebase_search_linked_share` | no |
 | `classification.csv` | grep-like calls by class, `rules` and `final` passes, `all` and per period | no |
-| `efficiency_calls.csv`, `efficiency_requests.csv` | per call, by tool and class; per `prompt.id`, by path (index-only, grep-only, both, neither) | no |
+| `efficiency_calls.csv`, `efficiency_requests.csv` | per call, by tool and class; per `prompt.id`, by path (index-only, grep-only, both, neither, and `unidentified` for a request with an `mcp_tool` call of unknown server) | no |
 | `ambiguous.csv` | what the rules left ambiguous and no model label resolves, each with its `prompt.id`'s other calls | **yes** |
 | `label-sample.csv` | `--sample N`: grep-like calls drawn by `--seed`, unlabelled, for the operator | **yes** |
 
@@ -627,6 +627,12 @@ stays until the next `--sample`.
   command's output and counts as `bash_filter`, not as a look-alike.
 - **A read sweep** is 3 or more Reads in one `prompt.id` before any search
   (`--sweep-reads`).
+- **Subagents** share their parent's `prompt.id`, so their calls count
+  under `subagent:` measures (`subagent:lookalike:grep_tool`, and so on).
+  Sweeps and follow-ups are the main thread's. Paths and classes take
+  every call.
+- **A prompt that spans a marker** credits each follow-up to its grep's
+  period, and a sweep to the period of the Read that completes it.
 - **Classes.** Rules decide `exact` and `semantic`; the rest is `ambiguous`.
   The examples are in `tests/report/test_usage_report.py`, all synthetic. A
   plain word that isn't on the common-noun list (`COMMON`) stays ambiguous,
@@ -654,7 +660,9 @@ A trend is established only when the lower bound reaches
 labels `labels.csv`.
 
 Exits 0; 1 when no record was read (a refused `sudo` reads as none); 64 on a
-usage error (a bad label or markers file).
+usage error: a bad argument; a bad label, markers or cohort file; or an `--out`
+it can't write. A label file names each `tool_use_id` once, as `exact` or
+`semantic`. A BOM is fine.
 
 ## Qdrant upgrade
 
