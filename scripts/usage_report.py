@@ -963,23 +963,29 @@ def analyse(
         seq = [c for c in every if not c.rec.get("agent_id")]  # the main thread's
         if not seq:
             continue
-        key = (seq[0].rec.host, seq[0].rec.repo, period(seq[0].rec))
-        reads = after_search = 0
+        # Each is credited to the period of the call that makes it: a prompt
+        # may span a marker.
+        reads = 0
+        sweep_key = None
+        followed = set()
         searched = searched_index = False
         for call in seq:
+            key = (call.rec.host, call.rec.repo, period(call.rec))
             if call.kind == "read" and not searched:
                 reads += 1
+                if reads == sweep_reads:
+                    sweep_key = key
             if call.kind == "grep_like" and searched_index:
-                after_search += 1
+                counts[key]["followup:grep_after_search"] += 1
+                followed.add(key)
             if call.kind in ("index", "grep_like", "explore"):
                 searched = True
             if call.tool == "index:codebase_search":
                 searched_index = True
-        if reads >= sweep_reads:
-            counts[key]["lookalike:read_sweep"] += 1
-            counts[key]["lookalike:read_sweep_reads"] += reads
-        if after_search:
-            counts[key]["followup:grep_after_search"] += after_search
+        if sweep_key is not None:
+            counts[sweep_key]["lookalike:read_sweep"] += 1
+            counts[sweep_key]["lookalike:read_sweep_reads"] += reads
+        for key in followed:
             counts[key]["followup:prompts"] += 1
     for c in counts.values():
         if c.get("mcp_unidentified") or c.get(SUBAGENT + "mcp_unidentified"):

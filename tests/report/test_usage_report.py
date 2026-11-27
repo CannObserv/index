@@ -749,6 +749,27 @@ def test_periods_split_at_each_markers_reach() -> None:
     assert count(r, "index_calls", repo="notifier", period="from collection-on-co-index") == 1
 
 
+def test_a_prompt_spanning_a_marker_credits_each_call_to_its_own_period() -> None:
+    """CR 25: its follow-up and sweep went to the period of its first call."""
+    t = "2026-11-28T{}.000Z".format
+    r = analyse(
+        [
+            index_call(ts=t("11:59:00")),
+            bash("rg -n Foo.bar", ts=t("12:01:00")),
+            _read("a", prompt="p2", ts=t("11:58:00")),
+            _read("b", prompt="p2", ts=t("11:59:00")),
+            _read("c", prompt="p2", ts=t("12:02:00")),
+        ],
+        markers=MARKERS,
+    )
+    after, before = "from policy-v2", "from collection-on-co-index"
+    assert count(r, "followup:grep_after_search", period=after) == 1
+    assert count(r, "followup:prompts", period=after) == 1
+    assert count(r, "followup:grep_after_search", period=before) == 0
+    assert count(r, "lookalike:read_sweep", period=after) == 1
+    assert count(r, "lookalike:read_sweep", period=before) == 0
+
+
 def test_a_record_before_every_marker_is_before_the_first() -> None:
     r = analyse([index_call(ts="2026-11-20T00:00:00.000Z")], markers=MARKERS)
     assert count(r, "index_calls", period="before collection-on-co-index") == 1
