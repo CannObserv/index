@@ -600,12 +600,14 @@ sudo sh -c 'zstd -dcq /var/lib/otelcol/archive/events-*.jsonl.zst; cat /var/lib/
 **`data/` is git-ignored, `0700`, and each file is `0600`.** The design
 accepts the output in the checkout. The real calls stay there: never commit,
 post or quote them. Issue comments carry counts, shapes and timings only.
-Each run overwrites the directory, apart from the two label files below.
+Each run rewrites every file it writes, refusing to write through a symlink.
+It never touches `labels.csv` or `ambiguous-labels.csv`. `label-sample.csv`
+stays until the next `--sample`.
 
 | File | Holds | Text from the calls? |
 |---|---|---|
 | `report.md` | the summary: counts, classification beside the agreement line, efficiency, with the caveats | no |
-| `counts.csv` | per host, repo and period: `measure`, `value` | no |
+| `counts.csv` | per host, repo and period: `measure`, `value`, including `codebase_search_linked_share` | no |
 | `classification.csv` | grep-like calls by class, `rules` and `final` passes, `all` and per period | no |
 | `efficiency_calls.csv`, `efficiency_requests.csv` | per call, by tool and class; per `prompt.id`, by path (index-only, grep-only, both, neither) | no |
 | `ambiguous.csv` | what the rules left ambiguous and no model label resolves, each with its `prompt.id`'s other calls | **yes** |
