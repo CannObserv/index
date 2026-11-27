@@ -14,8 +14,8 @@ that each declared link names a collection that exists and holds points.
   quote, a backslash or a control character.
 - **Exit 2**, unknown: Qdrant didn't answer. The check-in's own
   ``qdrant:collections`` is that finding. **Exit 3**, the check itself failed:
-  a 401, a 403 or a failed TLS check among it, since the check-in's own read
-  took the same URL and key a moment before.
+  a 401, a 403 or a certificate that fails verification among it, since the
+  check-in's own read took the same URL and key a moment before.
 - **A finding:** a link whose target's ``projectId`` has no
   ``codebase_<id>``, or one with 0 points (counted exactly); a path whose
   last component names no listed repo; a link to a listed repo that commits
@@ -38,6 +38,8 @@ import importlib.util
 import json
 import os
 import re
+import socket
+import ssl
 import stat
 import subprocess
 import threading
@@ -714,14 +716,55 @@ def test_a_refused_key_is_the_check_broken(
     assert str(status) in result.stderr
 
 
-def test_a_tls_failure_is_the_check_broken(world: tuple[World, str], tmp_path: Path) -> None:
-    """CR 3: curl verified this URL a moment before; Python failing to is
-    this check's own fault (a CA path, say), and would never clear."""
+def test_a_certificate_that_fails_verification_is_the_check_broken(
+    world: tuple[World, str], tmp_path: Path
+) -> None:
+    """CR 3: curl verified this URL a moment before, so Python failing to (a
+    CA path, say) is this check's own fault, and would never clear."""
     state, base = world
     _healthy(state)
-    result = _run(tmp_path, base, qdrant=base.replace("http://", "https://"))
-    assert (result.returncode, result.stdout) == (3, "")
-    assert "SSL" in result.stderr
+    cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
+    subprocess.run(
+        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1"]
+        + ["-subj", "/CN=127.0.0.1", "-keyout", str(key), "-out", str(cert)],
+        check=True,
+        capture_output=True,
+    )
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert, key)
+    with ThreadingHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler) as https:
+        https.socket = context.wrap_socket(https.socket, server_side=True)
+        threading.Thread(target=https.serve_forever, args=(0.05,), daemon=True).start()
+        try:
+            result = _run(tmp_path, base, qdrant=f"https://127.0.0.1:{https.server_port}")
+        finally:
+            https.shutdown()
+    assert (result.returncode, result.stdout) == (3, ""), result.stderr
+    assert "CERTIFICATE_VERIFY_FAILED" in result.stderr
+
+
+def test_a_handshake_cut_short_is_unknown(world: tuple[World, str], tmp_path: Path) -> None:
+    """CR 12: a peer closing mid-handshake is Qdrant or tailscaled
+    restarting, not the check broken. Only a failed verification is."""
+    state, base = world
+    _healthy(state)
+    listener = socket.create_server(("127.0.0.1", 0))
+
+    def close_each() -> None:
+        while True:
+            try:
+                conn, _ = listener.accept()
+            except OSError:
+                return
+            conn.close()
+
+    threading.Thread(target=close_each, daemon=True).start()
+    try:
+        port = listener.getsockname()[1]
+        result = _run(tmp_path, base, qdrant=f"https://127.0.0.1:{port}")
+    finally:
+        listener.close()
+    assert (result.returncode, result.stdout) == (2, ""), result.stderr
 
 
 def test_the_key_is_read_from_its_file_and_sent_as_a_header(

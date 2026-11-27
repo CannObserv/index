@@ -14,8 +14,8 @@ cohort list's order then each repo's links' (the check-in's `links`
 findings, spliced into hand-built JSON, so neither part holds a quote, a
 backslash or a control character); 2 unknown, when Qdrant didn't answer
 (the check-in's qdrant:collections is that finding); 3 when the check
-itself failed, a refused key or a failed TLS check among it: the check-in
-read the same URL with the same key a moment before.
+itself failed, a refused key or a certificate that fails verification among
+it: the check-in read the same URL with the same key a moment before.
 
 Public repos' files come from raw.githubusercontent.com, anonymously, every
 REFRESH_H hours (the check-in runs every 10 minutes), or at once when the
@@ -220,8 +220,10 @@ class Store:
                 with urllib.request.urlopen(req, timeout=QDRANT_TIMEOUT) as r:
                     self.counts[collection] = int(json.load(r)["result"]["count"])
             # The check-in's own read took this URL and key a moment before.
-            # So a refused key or a failed TLS check is no blip, and unknown
-            # would stay silent for good: both are the check broken.
+            # So a refused key or a certificate that fails verification is no
+            # blip, and unknown would stay silent for good: both are the check
+            # broken. Any other TLS error (a handshake cut short by a restart)
+            # is unknown, as a refused connection is (CR 12).
             except urllib.error.HTTPError as e:
                 if e.code in (401, 403):
                     raise Broken(f"{collection}: HTTP {e.code}, the key refused") from e
@@ -230,7 +232,7 @@ class Store:
                 self.counts[collection] = None
             except (OSError, ValueError, KeyError, TypeError, http.client.HTTPException) as e:
                 reason = getattr(e, "reason", e)
-                if isinstance(reason, ssl.SSLError):
+                if isinstance(reason, ssl.SSLCertVerificationError):
                     raise Broken(f"{collection}: {reason!r}") from e
                 raise Unknown(f"{collection}: {e}") from e
         return self.counts[collection]
