@@ -76,12 +76,12 @@ it, the only thing that needs watching is a link a repo **declares** in
   the flag or without it. `OTEL_LOG_TOOL_DETAILS=1` adds `tool_parameters`,
   which names the server and the tool (`mcp_server_name`, `mcp_tool_name`),
   and `tool_input`, the arguments. So a SocratiCode call is told from any
-  other MCP call by its server's name alone. Without the flag, per the
-  monitoring docs, neither is sent, and no Grep pattern or Bash command
-  either. The flag is required. *Corrected 2026-11-27
-  (CannObserv/index#54):* this line said only that the flag's absence made
-  the name `mcp_tool`. With the flag, Claude Code 2.1.309, 2.1.330 and 2.1.332
-  all sent `mcp_tool` too (measured).
+  other MCP call by its server's name alone. Without the flag neither is
+  sent, and no Grep pattern or Bash command either. The flag is required.
+  *Corrected 2026-11-27 (CannObserv/index#54):* this line said only that
+  the flag's absence made the name `mcp_tool`. Measured on loopback: with
+  the flag, Claude Code 2.1.309, 2.1.330 and 2.1.332 all sent `mcp_tool` and
+  both fields; without it, 2.1.330 sent `mcp_tool` and neither.
 - **Traffic flows one way.** VMs can reach `co-index` over the tailnet;
   `co-index` reaches no VM. Clients push.
 - **Session-triggered reports only.** The model judging ambiguous greps is
