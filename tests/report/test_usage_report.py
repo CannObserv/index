@@ -947,6 +947,8 @@ def test_per_request_efficiency_by_path_keeps_cache_reads_apart() -> None:
             api(prompt="pb"),
             bash("ls", prompt="pn"),
             api(prompt="pn"),
+            bash("ls", prompt="pn3"),
+            api(prompt="pn3"),
         ]
     )
     rows = {row["path"]: row for row in r.efficiency_requests}
@@ -955,6 +957,7 @@ def test_per_request_efficiency_by_path_keeps_cache_reads_apart() -> None:
     assert pi["requests"] == 1 and pi["input_tokens_sum"] == 15
     assert pi["cache_read_tokens_sum"] == 1500 and pi["cost_usd_sum"] == pytest.approx(0.75)
     assert rows["grep-only"]["input_tokens_sum"] == 7
+    assert rows["both"]["requests"] == 1 and rows["neither"]["requests"] == 2  # CR 51
 
 
 # --- the ambiguous loop and agreement ----------------------------------------
