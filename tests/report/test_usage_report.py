@@ -1090,6 +1090,15 @@ def test_a_planted_link_in_data_is_not_written_through(tmp_path) -> None:
     assert target.read_text() == "keep"
 
 
+def test_every_table_has_its_header_when_it_has_no_rows(tmp_path) -> None:
+    """CR 30: with no tool call, efficiency_calls.csv was a bare line end."""
+    out = tmp_path / "data"
+    assert _run(export([api()]) + "\n", "-", out=out).returncode == 0
+    for name in ("efficiency_calls", "ambiguous", "counts", "classification"):
+        header = (out / f"{name}.csv").read_text().splitlines()[0]
+        assert header.count(",") >= 3, (name, header)
+
+
 def test_no_records_writes_nothing_and_exits_1(tmp_path) -> None:
     out = tmp_path / "data"
     res = _run("", "-", out=out)

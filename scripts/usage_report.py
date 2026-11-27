@@ -1061,14 +1061,7 @@ def analyse(
     for key, totals in per_prompt.items():
         grouped[paths.get(key, "neither")].append(totals)
     efficiency_requests = []
-    metrics = (
-        "input_tokens",
-        "output_tokens",
-        "cache_read_tokens",
-        "cache_creation_tokens",
-        "cost_usd",
-        "duration_ms",
-    )
+    metrics = REQUEST_METRICS
     for path_name in ("index-only", "grep-only", "both", "neither", "unidentified"):
         group = grouped.get(path_name, [])
         row = {"path": path_name, "requests": len(group)}
@@ -1159,8 +1152,32 @@ def _private_writer(path: Path):
     return os.fdopen(fd, "w", newline="")
 
 
-def _write_csv(path: Path, rows: list[dict], fields: list[str] | None = None) -> None:
-    fields = fields or (list(rows[0]) if rows else [])
+EFFICIENCY_CALL_FIELDS = [
+    "tool",
+    "class",
+    "calls",
+    "size_n",
+    "size_sum",
+    "size_median",
+    "size_mean",
+    "duration_n",
+    "duration_median",
+    "duration_mean",
+]
+REQUEST_METRICS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_read_tokens",
+    "cache_creation_tokens",
+    "cost_usd",
+    "duration_ms",
+)
+EFFICIENCY_REQUEST_FIELDS = ["path", "requests"] + [
+    f"{m}_{s}" for m in REQUEST_METRICS for s in ("sum", "median")
+]
+
+
+def _write_csv(path: Path, rows: list[dict], fields: list[str]) -> None:
     with _private_writer(path) as fh:
         writer = csv.DictWriter(fh, fieldnames=fields)
         writer.writeheader()
@@ -1218,8 +1235,10 @@ def write_report(out: Path, loaded: Loaded, result: Analysis, args, sample_rows)
         result.classification,
         ["host", "repo", "period", "pass", "class", "calls"],
     )
-    _write_csv(out / "efficiency_calls.csv", result.efficiency_calls)
-    _write_csv(out / "efficiency_requests.csv", result.efficiency_requests)
+    _write_csv(out / "efficiency_calls.csv", result.efficiency_calls, EFFICIENCY_CALL_FIELDS)
+    _write_csv(
+        out / "efficiency_requests.csv", result.efficiency_requests, EFFICIENCY_REQUEST_FIELDS
+    )
 
     by_prompt = defaultdict(list)
     for c in result.calls:
