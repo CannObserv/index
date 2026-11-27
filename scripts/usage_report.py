@@ -1343,6 +1343,10 @@ def main(argv: list[str]) -> int:
         model = read_labels(model_path) if args.model_labels or model_path.exists() else {}
         if args.sample is not None and args.sample < 1:
             raise Usage("--sample takes a positive count")
+        if args.sweep_reads < 1:
+            raise Usage("--sweep-reads takes a positive count")
+        if args.out.exists() and not args.out.is_dir():
+            raise Usage(f"--out {args.out} is not a directory")
         try:
             loaded = load_records(_read_inputs(args.inputs))
         except OSError as exc:
@@ -1370,7 +1374,11 @@ def main(argv: list[str]) -> int:
     if args.sample is not None:
         pool = sorted((c for c in result.calls if c.kind == "grep_like"), key=lambda c: c.use_id)
         sample_rows = random.Random(args.seed).sample(pool, min(args.sample, len(pool)))
-    write_report(args.out, loaded, result, args, sample_rows)
+    try:
+        write_report(args.out, loaded, result, args, sample_rows)
+    except OSError as exc:
+        print(f"usage_report: can't write {args.out}: {exc}", file=sys.stderr)
+        return 64
     print(f"usage_report: {len(loaded.records)} records → {args.out}/report.md")
     return 0
 

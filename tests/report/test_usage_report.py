@@ -984,6 +984,20 @@ def test_files_are_read_as_well_as_stdin(tmp_path) -> None:
     assert res.returncode == 0, res.stderr
 
 
+def test_an_out_that_is_a_file_is_a_usage_error(tmp_path) -> None:
+    """CR 16: it raised FileExistsError, a traceback and exit 1."""
+    out = tmp_path / "data"
+    out.write_text("x")
+    res = _run(_sample_lines(), "-", out=out)
+    assert res.returncode == 64 and "Traceback" not in res.stderr
+
+
+@pytest.mark.parametrize("n", ["0", "-1"])
+def test_a_sweep_threshold_below_one_is_a_usage_error(tmp_path, n) -> None:
+    res = _run(_sample_lines(), "-", "--sweep-reads", n, out=tmp_path / "d")
+    assert res.returncode == 64
+
+
 def test_no_records_writes_nothing_and_exits_1(tmp_path) -> None:
     out = tmp_path / "data"
     res = _run("", "-", out=out)
