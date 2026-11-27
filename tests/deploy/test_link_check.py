@@ -270,9 +270,7 @@ def test_every_link_populated_is_clean_and_caches_what_it_fetched(
     assert sorted(state.fetched()) == sorted(f"/raw/{r}/HEAD/.socraticode.json" for r in PUBLIC)
 
 
-def test_the_cache_is_root_readable_only_by_its_mode(
-    world: tuple[World, str], tmp_path: Path
-) -> None:
+def test_the_cache_is_written_whole_at_0644(world: tuple[World, str], tmp_path: Path) -> None:
     """It holds public repos' files, nothing secret: 0644, written whole."""
     state, base = world
     _healthy(state)
@@ -458,7 +456,8 @@ def test_a_link_to_a_hand_listed_repo_reads_its_listed_projectid(
 
 def test_a_fresh_cache_is_read_and_github_is_not(world: tuple[World, str], tmp_path: Path) -> None:
     """The host step's plant: a cache entry naming a collection that doesn't
-    exist arrives as a finding, without touching the store or GitHub."""
+    exist arrives as a finding, with nothing written to the store and nothing
+    fetched from GitHub."""
     state, base = world
     _healthy(state)
     repos = {
@@ -722,10 +721,12 @@ def test_the_key_is_read_from_its_file_and_sent_as_a_header(
 
 
 def test_each_collection_is_counted_once(world: tuple[World, str], tmp_path: Path) -> None:
+    """codebase_notifier has two links into it, watcher's and status's."""
     state, base = world
     _healthy(state)
-    _run(tmp_path, base)
+    assert _run(tmp_path, base).returncode == 0
     counts = [p for m, p, _ in state.requests if m == "POST"]
+    assert counts.count("/collections/codebase_notifier/points/count") == 1
     assert sorted(counts) == sorted(set(counts))
 
 
