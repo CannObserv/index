@@ -1035,6 +1035,7 @@ def analyse(
                     sweep_key = key
             if call.kind == "grep_like" and searched_index:
                 counts[key]["followup:grep_after_search"] += 1
+                counts[key][f"followup:grep_after_search:{call.cls}"] += 1
                 followed.add(key)
             if call.kind in ("index", "grep_like", "explore"):
                 searched = True
@@ -1344,8 +1345,9 @@ def write_report(out: Path, loaded: Loaded, result: Analysis, args, sample_rows)
         "an exact-string grep is correct use, so read each by its class "
         "(`lookalike:<tool>:exact|semantic|ambiguous`). A grep reading a pipe is a `bash_filter`, "
         f"not a look-alike. A read sweep is {args.sweep_reads}+ Reads in one prompt before "
-        "any search. A subagent shares its parent's prompt, so its calls count under "
-        "`subagent:` measures; sweeps and follow-ups are the main thread's."
+        "any search. A follow-up's thin signal is its semantic and ambiguous classes; an exact "
+        "one is the search's answer looked up. A subagent shares its parent's prompt, so its "
+        "calls count under `subagent:` measures; sweeps and follow-ups are the main thread's."
     )
     for (host, repo, per), c in sorted(result.counts.items()):
         md += ["", f"### {host} · {repo} · {per}", ""]

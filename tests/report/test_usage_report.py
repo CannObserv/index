@@ -755,6 +755,16 @@ def test_linked_searches_are_counted_beside_sibling_access() -> None:
     assert count(r, "sibling_access") == 1
 
 
+def test_a_follow_up_is_split_by_class() -> None:
+    """CR 63: an exact grep for a symbol the search returned is correct use;
+    only the semantic and ambiguous ones say the index answered thin."""
+    r = analyse([index_call(), bash("rg -n Foo.bar"), bash("rg -n auth"), bash("rg -n qdrant")])
+    assert count(r, "followup:grep_after_search") == 3
+    assert count(r, "followup:grep_after_search:exact") == 1
+    assert count(r, "followup:grep_after_search:semantic") == 1
+    assert count(r, "followup:grep_after_search:ambiguous") == 1
+
+
 def test_a_subagents_calls_count_apart_from_the_main_threads() -> None:
     """CR 24: subagents share the parent's prompt.id (measured, 8 of 8), so one
     Explore counted as an Explore, its Greps, and the parent's follow-ups."""
