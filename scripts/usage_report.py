@@ -224,7 +224,16 @@ class Search:
 
 _SEPARATORS = {";", "&&", "||", "&", "\n", "(", ")", "{", "}", ";;"}
 _REDIRECTS = {">", ">>", "<", ">&", "<&", "&>", "&>>", ">|", "<<<", "<>"}
-_PREFIXES = {"sudo", "command", "exec", "nice", "nohup", "time", "env"}
+_PREFIXES = {"sudo", "command", "exec", "nice", "nohup", "time", "env", "timeout"}
+# Each prefix's short options that take a value: ``sudo -u x``, ``xargs -n 1``.
+_PREFIX_VALUED = {
+    "sudo": set("ugpChDRTr"),
+    "nice": {"n"},
+    "env": {"u", "C", "S"},
+    "timeout": {"s", "k"},
+    "exec": {"a"},
+    "xargs": set("nILPdsEa"),
+}
 _KEYWORDS = {"do", "then", "else", "elif", "if", "while", "until", "!"}
 # Options that take a value, by tool. Long forms with '=' carry theirs.
 _GREP_VALUED = set("efmABCd") | {"D"}
@@ -365,20 +374,31 @@ def _stages(tokens: list[str]):
     yield from flush()
 
 
+def _skip_options(argv: list[str], valued: set) -> list[str]:
+    """Drop leading options, and the value of one that takes it."""
+    while argv and argv[0].startswith("-") and argv[0] != "-":
+        opt, argv = argv[0], argv[1:]
+        if opt == "--":
+            break
+        if opt.startswith("--"):
+            continue  # long forms here carry their value after "="
+        for j, ch in enumerate(opt[1:], start=1):
+            if ch in valued:
+                if j == len(opt) - 1 and argv:
+                    argv = argv[1:]
+                break
+    return argv
+
+
 def _strip_prefix(argv: list[str]) -> list[str]:
     while argv:
         head = argv[0]
         if head in _KEYWORDS:
             argv = argv[1:]
         elif head in _PREFIXES:
-            argv = argv[1:]
-            while argv and (argv[0].startswith("-") or "=" in argv[0]):
-                argv = argv[1:]
-        elif head == "timeout":
-            argv = [a for a in argv[1:]]
-            while argv and argv[0].startswith("-"):
-                argv = argv[1:]
-            argv = argv[1:]  # the duration
+            argv = _skip_options(argv[1:], _PREFIX_VALUED.get(head, set()))
+            if head == "timeout":
+                argv = argv[1:]  # the duration
         elif re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", head):
             argv = argv[1:]
         else:
@@ -454,9 +474,7 @@ def bash_searches(cmd: str) -> list[Search] | None:
         via_xargs = False
         if argv and argv[0] == "xargs":
             via_xargs = True
-            argv = argv[1:]
-            while argv and argv[0].startswith("-"):
-                argv = argv[1:]
+            argv = _skip_options(argv[1:], _PREFIX_VALUED["xargs"])
         if not argv:
             continue
         head = os.path.basename(argv[0])

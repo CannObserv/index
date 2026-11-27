@@ -354,6 +354,25 @@ def test_a_shell_keyword_is_no_command(cmd) -> None:
     assert _found(cmd) == [("grep", "foo", False)]
 
 
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "sudo -u exedev grep -rn foo .",
+        "sudo -E -u exedev -- grep -rn foo .",
+        "nice -n 10 grep -rn foo .",
+        "timeout -s KILL 10 grep -rn foo .",
+        "timeout 5s grep -rn foo .",
+        "env -u X A=b grep -rn foo .",
+        "git ls-files | xargs -n 1 grep foo",
+        "git ls-files | xargs -I {} grep foo {}",
+        "git ls-files | xargs -0 -P4 grep foo",
+    ],
+)
+def test_a_prefixs_valued_options_are_skipped(cmd) -> None:
+    """CR 4: ``sudo -u x`` or ``xargs -n 1`` left their value as the command."""
+    assert _found(cmd) == [("grep", "foo", False)]
+
+
 def test_grep_flags_are_read() -> None:
     [s] = ur.bash_searches("grep -rnFw 'x: y' .")
     assert s.fixed and s.word
