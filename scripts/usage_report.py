@@ -299,9 +299,35 @@ def _tokens(cmd: str) -> list[str] | None:
     lex.whitespace_split = True
     lex.commenters = ""
     try:
-        return list(lex)
+        raw = list(lex)
     except ValueError:
         return None
+    # shlex lexes a run of operator characters as one token (";\n", ");").
+    out = []
+    for tok in raw:
+        if tok and all(ch in _OPERATOR_CHARS for ch in tok) and tok not in _OPERATORS:
+            out += _split_operators(tok)
+        else:
+            out.append(tok)
+    return out
+
+
+_OPERATOR_CHARS = set(";&|()<>\n")
+_OPERATORS = sorted(
+    {";", "&", "|", "(", ")", "<", ">", "\n", "&&", "||", ";;", "|&", ">>", "&>", ">&"}
+    | {"<&", "<>", ">|", "&>>", "<<<", "<<"},
+    key=len,
+    reverse=True,
+)
+
+
+def _split_operators(tok: str) -> list[str]:
+    out, i = [], 0
+    while i < len(tok):
+        op = next(o for o in _OPERATORS if tok.startswith(o, i))
+        out.append(op)
+        i += len(op)
+    return out
 
 
 def _stages(tokens: list[str]):

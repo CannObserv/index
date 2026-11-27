@@ -313,6 +313,24 @@ def test_bash_searches_and_filters_are_told_apart(cmd, expected) -> None:
     assert [(s.bin, s.pattern, s.filter) for s in found] == expected
 
 
+def _found(cmd: str) -> list[tuple]:
+    return [(s.bin, s.pattern, s.filter) for s in ur.bash_searches(cmd)]
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "ls;\ngrep -rn foo .",
+        "(cd x && ls);grep -rn foo .",
+        "cmd &&\ngrep -rn foo .",
+        "a ||\ngrep -rn foo .",
+    ],
+)
+def test_a_run_of_operators_still_separates_commands(cmd) -> None:
+    """CR 1: shlex lexes ``;\\n`` or ``);`` as one token."""
+    assert _found(cmd) == [("grep", "foo", False)]
+
+
 def test_grep_flags_are_read() -> None:
     [s] = ur.bash_searches("grep -rnFw 'x: y' .")
     assert s.fixed and s.word
