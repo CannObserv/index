@@ -938,6 +938,13 @@ def test_agreement_is_established_when_its_lower_bound_reaches_the_threshold() -
     assert not analyse(recs, labels=labels, threshold=0.99).agreement.established
 
 
+def test_a_label_file_saved_with_a_bom_is_read(tmp_path) -> None:
+    """CR 31: a spreadsheet's UTF-8 BOM read as a missing tool_use_id column."""
+    path = tmp_path / "l.csv"
+    path.write_bytes("\ufefftool_use_id,label\nt1,exact\n".encode())
+    assert ur.read_labels(path) == {"t1": "exact"}
+
+
 def test_label_files_take_only_exact_or_semantic(tmp_path) -> None:
     path = tmp_path / "l.csv"
     path.write_text("tool_use_id,label,extra\nt1,exact,x\nt2, Semantic ,y\nt3,,z\n")

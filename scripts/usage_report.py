@@ -1113,7 +1113,7 @@ def _scopes(calls: list[Call], period):
 
 def read_labels(path: Path) -> dict:
     try:
-        with Path(path).open(newline="") as fh:
+        with Path(path).open(newline="", encoding="utf-8-sig") as fh:
             reader = csv.DictReader(fh)
             if not reader.fieldnames or not {"tool_use_id", "label"} <= set(reader.fieldnames):
                 raise Usage(f"{path}: needs the columns tool_use_id and label")
