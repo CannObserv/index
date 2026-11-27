@@ -326,8 +326,21 @@ def _strip_heredocs(cmd: str) -> str:
     return "\n".join(out)
 
 
+def _strip_comments(cmd: str) -> str:
+    """A whole-line comment, or a trailing one on a line with no quote before it."""
+    out = []
+    for line in cmd.split("\n"):
+        if line.lstrip().startswith("#"):
+            continue
+        m = re.search(r"\s#", line)
+        if m and not re.search(r"['\"]", line[: m.start()]):
+            line = line[: m.start()]
+        out.append(line)
+    return "\n".join(out)
+
+
 def _tokens(cmd: str) -> list[str] | None:
-    cmd = _strip_heredocs(cmd).replace("\\\n", " ")
+    cmd = _strip_comments(_strip_heredocs(cmd)).replace("\\\n", " ")
     lex = shlex.shlex(cmd, posix=True, punctuation_chars=";&|()<>\n")
     lex.whitespace = " \t\r"
     lex.whitespace_split = True

@@ -426,6 +426,23 @@ def test_a_grep_under_find_exec_is_a_search(cmd) -> None:
     assert call.rule == "semantic"
 
 
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "# it's a comment\ngrep -rn foo .",
+        "  # don't\ngrep -rn foo .",
+        "grep -rn foo . # it's here",
+    ],
+)
+def test_a_comment_is_no_part_of_the_command(cmd) -> None:
+    """CR 11: an apostrophe in a comment failed the whole lex."""
+    assert _found(cmd) == [("grep", "foo", False)]
+
+
+def test_a_hash_inside_quotes_is_kept() -> None:
+    assert _found("grep -rn '# x' .") == [("grep", "# x", False)]
+
+
 def test_grep_flags_are_read() -> None:
     [s] = ur.bash_searches("grep -rnFw 'x: y' .")
     assert s.fixed and s.word
