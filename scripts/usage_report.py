@@ -123,6 +123,7 @@ class Loaded:
     bad_lines: int = 0
     bad_records: int = 0
     excluded: int = 0
+    before_since: int = 0
     duplicates: int = 0
 
 
@@ -167,7 +168,7 @@ def _log_records(doc):
                 yield resource, _attrs(_list(lr.get("attributes"))), lr
 
 
-def load_records(lines) -> Loaded:
+def load_records(lines, since: datetime | None = None) -> Loaded:
     out = Loaded()
     seen = set()
     for line in lines:
@@ -216,6 +217,9 @@ def load_records(lines) -> Loaded:
                 )
             except (ValueError, TypeError, AttributeError):
                 out.bad_records += 1
+                continue
+            if since is not None and record.ts < since:
+                out.before_since += 1  # never kept: memory is ~3.5 KB a record
                 continue
             seen.add(key)
             out.records.append(record)
@@ -1309,7 +1313,8 @@ def write_report(out: Path, loaded: Loaded, result: Analysis, args, sample_rows)
         f"{first:%Y-%m-%dT%H:%MZ} to {last:%Y-%m-%dT%H:%MZ}. Lines {loaded.lines}, "
         f"unparseable {loaded.bad_lines}, bad records {loaded.bad_records}, "
         f"duplicates dropped {loaded.duplicates}, "
-        f"excluded (proof sessions) {loaded.excluded}."
+        f"excluded (proof sessions) {loaded.excluded}"
+        + (f", before since {args.since:%Y-%m-%d} {loaded.before_since}." if args.since else ".")
     )
     md += ["", "## Markers", ""]
     md.append(
@@ -1417,6 +1422,13 @@ def _read_inputs(paths: list[str]):
                 yield from fh
 
 
+def _utc_date(text: str) -> datetime:
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=UTC)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"{text!r} is no YYYY-MM-DD date") from exc
+
+
 class _Parser(argparse.ArgumentParser):
     def error(self, message):
         raise Usage(message)
@@ -1436,6 +1448,9 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument("--sample", type=int, help="write N grep-like calls to label-sample.csv")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--since", type=_utc_date, help="read records from this UTC date (YYYY-MM-DD) on"
+    )
     parser.add_argument("--sweep-reads", type=int, default=SWEEP_READS)
     parser.add_argument("--agreement-threshold", type=float, default=THRESHOLD)
     try:
@@ -1460,7 +1475,7 @@ def main(argv: list[str]) -> int:
         if args.out.exists() and not args.out.is_dir():
             raise Usage(f"--out {args.out} is not a directory")
         try:
-            loaded = load_records(_read_inputs(args.inputs))
+            loaded = load_records(_read_inputs(args.inputs), since=args.since)
         except OSError as exc:
             raise Usage(str(exc)) from exc
     except Usage as exc:

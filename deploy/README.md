@@ -597,6 +597,13 @@ sudo sh -c 'zstd -dcq /var/lib/otelcol/archive/events-*.jsonl.zst; cat /var/lib/
   | uv run scripts/usage_report.py -                # add --sample 120 for #37's sample
 ```
 
+**Memory: about 3.5 KB a record, roughly 2.4 times the input** (measured
+2026-11-27 on synthetic input: 80,000 records in 297 MB and 21 s). The pilot
+writes about 1.5 MB a day, so ten VMs over 90 days come to about 1.35 GB of
+input, or 2–3 GB of memory, on the host Qdrant and Ollama share. For a routine
+read, pass `--since YYYY-MM-DD`: older records are dropped as they load. Run a
+full read with `free -m` in hand.
+
 **`data/` is git-ignored, `0700`, and each file is `0600`.** The design
 accepts the output in the checkout. The real calls stay there: never commit,
 post or quote them. Issue comments carry counts, shapes and timings only.

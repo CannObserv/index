@@ -1377,6 +1377,24 @@ def test_each_usage_error_exits_64_without_a_traceback(tmp_path, case) -> None:
     assert res.returncode == 64 and "Traceback" not in res.stderr, res.stderr
 
 
+def test_since_keeps_only_the_window_and_drops_the_rest_at_load() -> None:
+    """CR 61: a full 90-day, ten-VM read projects to 2-3 GB of memory, on the
+    store's host. A record before --since is never kept."""
+    old = tool("Read", ts="2026-11-20T23:59:59.999Z")
+    new = tool("Read", ts="2026-11-21T00:00:00.000Z")
+    since = datetime.fromisoformat("2026-11-21T00:00:00+00:00")
+    loaded = ur.load_records([export([old, new])], since=since)
+    assert len(loaded.records) == 1 and loaded.before_since == 1
+
+
+@pytest.mark.parametrize(("value", "code"), [("2026-11-21", 0), ("21/11/2026", 64), ("x", 64)])
+def test_since_takes_a_utc_date(tmp_path, value, code) -> None:
+    res = _run(_sample_lines(), "-", "--since", value, out=tmp_path / "d")
+    assert res.returncode == code, res.stderr
+    if code == 0:
+        assert "since 2026-11-21" in (tmp_path / "d" / "report.md").read_text()
+
+
 def test_no_records_writes_nothing_and_exits_1(tmp_path) -> None:
     out = tmp_path / "data"
     res = _run("", "-", out=out)
