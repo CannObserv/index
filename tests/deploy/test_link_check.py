@@ -548,6 +548,19 @@ def test_a_cache_stamped_in_the_future_is_refreshed(
     assert len(state.fetched()) == len(PUBLIC)
 
 
+def test_a_failed_refresh_does_not_keep_a_stamp_ahead_of_the_clock(
+    world: tuple[World, str], tmp_path: Path
+) -> None:
+    """CR 17: kept, it reads as a good fetch whenever the clock passes it."""
+    state, base = world
+    _healthy(state)
+    _write_cache(tmp_path, fetched=-72, attempted=-72, repos=_fresh(state), raw=f"{base}/raw")
+    state.raw_status = 500
+    result = _run(tmp_path, base)
+    assert _lines(result) == [("cache", "no good fetch from GitHub yet")]
+    assert _cache(tmp_path)["fetched_at"] is None
+
+
 def test_a_cache_six_hours_old_is_refreshed(world: tuple[World, str], tmp_path: Path) -> None:
     state, base = world
     _healthy(state)

@@ -194,8 +194,9 @@ def _refresh(cohort: dict, cache: dict | None, now: datetime, path: str) -> dict
     except RefreshFailed as e:
         print(f"link-check: refresh failed, cache kept: {e}", file=sys.stderr)
         old = cache or {}
+        kept = _parse(old.get("fetched_at"), now)  # none ahead of the clock (CR 17)
         cache = {
-            "fetched_at": old.get("fetched_at"),
+            "fetched_at": old.get("fetched_at") if kept else None,
             "attempted_at": stamp,
             "raw": old.get("raw"),
             "repos": old.get("repos", {}),
