@@ -339,6 +339,21 @@ def test_a_here_string_is_no_heredoc() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "for f in a b; do grep -rn foo $f; done",
+        "if grep -rqn foo .; then echo y; fi",
+        "! grep -rn foo .",
+        "while true; do grep -rn foo .; done",
+        "if x; then :; else grep -rn foo .; fi",
+    ],
+)
+def test_a_shell_keyword_is_no_command(cmd) -> None:
+    """CR 3: ``do``, ``then``, ``!`` and the rest hid the grep after them."""
+    assert _found(cmd) == [("grep", "foo", False)]
+
+
 def test_grep_flags_are_read() -> None:
     [s] = ur.bash_searches("grep -rnFw 'x: y' .")
     assert s.fixed and s.word

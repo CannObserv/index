@@ -225,6 +225,7 @@ class Search:
 _SEPARATORS = {";", "&&", "||", "&", "\n", "(", ")", "{", "}", ";;"}
 _REDIRECTS = {">", ">>", "<", ">&", "<&", "&>", "&>>", ">|", "<<<", "<>"}
 _PREFIXES = {"sudo", "command", "exec", "nice", "nohup", "time", "env"}
+_KEYWORDS = {"do", "then", "else", "elif", "if", "while", "until", "!"}
 # Options that take a value, by tool. Long forms with '=' carry theirs.
 _GREP_VALUED = set("efmABCd") | {"D"}
 _GREP_LONG_VALUED = {
@@ -367,7 +368,9 @@ def _stages(tokens: list[str]):
 def _strip_prefix(argv: list[str]) -> list[str]:
     while argv:
         head = argv[0]
-        if head in _PREFIXES:
+        if head in _KEYWORDS:
+            argv = argv[1:]
+        elif head in _PREFIXES:
             argv = argv[1:]
             while argv and (argv[0].startswith("-") or "=" in argv[0]):
                 argv = argv[1:]
