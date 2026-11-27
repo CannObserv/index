@@ -217,6 +217,18 @@ def test_a_record_read_twice_is_counted_once() -> None:
     assert len(loaded.records) == 1 and loaded.duplicates == 1
 
 
+def test_two_records_sharing_a_sequence_number_are_both_kept() -> None:
+    """CR 5: measured on co-index, two distinct tool_results shared
+    ``session.id``, ``event.sequence`` and timestamp: the id tells them apart."""
+    a, b = tool("Read", use_id="toolu_a"), tool("Read", use_id="toolu_b")
+    b["event.sequence"] = a["event.sequence"]
+    q, r = api(), api()
+    r["event.sequence"] = q["event.sequence"]
+    r["request_id"], q["request_id"] = "req_r", "req_q"
+    loaded = ur.load_records([export([a, b, q, r])])
+    assert len(loaded.records) == 4 and loaded.duplicates == 0
+
+
 def test_an_unparseable_line_is_counted_and_skipped() -> None:
     loaded = ur.load_records(["{not json", "", export([tool("Read")])])
     assert len(loaded.records) == 1 and loaded.bad_lines == 1

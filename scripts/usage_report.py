@@ -140,7 +140,18 @@ def load_records(lines) -> Loaded:
                     if session in EXCLUDED_SESSIONS:
                         out.excluded += 1
                         continue
-                    key = (session, event, str(attrs.get("event.sequence")))
+                    # event.sequence alone isn't unique: two distinct records
+                    # shared it on co-index (2026-11-27). The id is.
+                    key = (
+                        session,
+                        event,
+                        str(attrs.get("event.sequence")),
+                        str(
+                            attrs.get("tool_use_id")
+                            or attrs.get("request_id")
+                            or lr.get("timeUnixNano")
+                        ),
+                    )
                     if key in seen:
                         out.duplicates += 1
                         continue
