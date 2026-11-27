@@ -716,8 +716,15 @@ def test_no_sibling_access(rec) -> None:
 
 
 def test_linked_searches_are_counted_beside_sibling_access() -> None:
-    r = analyse([index_call(args={"query": "q", "includeLinked": True})])
+    """CR 45: both measures, side by side, as the design reads them."""
+    r = analyse(
+        [
+            index_call(args={"query": "q", "includeLinked": True}),
+            bash("gh repo clone CannObserv/notifier"),
+        ]
+    )
     assert count(r, "codebase_search_linked") == 1
+    assert count(r, "sibling_access") == 1
 
 
 def test_a_subagents_calls_count_apart_from_the_main_threads() -> None:
