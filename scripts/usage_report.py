@@ -1004,12 +1004,11 @@ def analyse(
         elif call.kind in ("mcp_other", "mcp_unidentified"):
             c[pre + call.kind] += 1
         elif call.kind == "grep_like":
-            c[
-                pre
-                + {"Grep": "lookalike:grep_tool", "Glob": "lookalike:glob"}.get(
-                    call.tool, "lookalike:bash_search"
-                )
-            ] += 1
+            look = {"Grep": "lookalike:grep_tool", "Glob": "lookalike:glob"}.get(
+                call.tool, "lookalike:bash_search"
+            )
+            c[pre + look] += 1
+            c[f"{pre}{look}:{call.cls}"] += 1  # a total alone is no finding
         elif call.kind == "bash_filter":
             c[pre + "bash_filter"] += 1
         elif call.kind == "explore":
@@ -1341,7 +1340,9 @@ def write_report(out: Path, loaded: Loaded, result: Analysis, args, sample_rows)
         "Per host, repo and period, split at docs/usage-markers.json's reach. An index call "
         "is `mcp_tool` naming SocratiCode's server in `tool_parameters`. **A period with "
         "unidentified MCP calls (`mcp_unidentified`, before #54's install) reads its index "
-        "calls as a floor** (`index_calls_floor` 1). A grep reading a pipe is a `bash_filter`, "
+        "calls as a floor** (`index_calls_floor` 1). **A look-alike's total is no finding:** "
+        "an exact-string grep is correct use, so read each by its class "
+        "(`lookalike:<tool>:exact|semantic|ambiguous`). A grep reading a pipe is a `bash_filter`, "
         f"not a look-alike. A read sweep is {args.sweep_reads}+ Reads in one prompt before "
         "any search. A subagent shares its parent's prompt, so its calls count under "
         "`subagent:` measures; sweeps and follow-ups are the main thread's."

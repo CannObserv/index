@@ -648,6 +648,28 @@ def test_a_call_is_semantic_if_any_search_is_exact_if_all_are() -> None:
 # --- look-alikes, siblings, follow-ups ---------------------------------------
 
 
+def test_each_look_alike_count_is_split_by_class() -> None:
+    """CR 62: a raw grep-vs-index ratio is no finding (the design's anti-goal)."""
+    r = analyse(
+        [
+            bash("rg -n Foo.bar"),
+            bash("rg -n auth"),
+            bash("rg -n qdrant"),
+            tool("Grep", None, {"pattern": "Foo.bar"}),
+            tool("Glob", None, {"pattern": "**/*auth*"}, agent="a1"),
+        ]
+    )
+    for measure, n in {
+        "lookalike:bash_search:exact": 1,
+        "lookalike:bash_search:semantic": 1,
+        "lookalike:bash_search:ambiguous": 1,
+        "lookalike:grep_tool:exact": 1,
+        "subagent:lookalike:glob:semantic": 1,
+    }.items():
+        assert count(r, measure) == n, measure
+    assert count(r, "lookalike:bash_search") == 3
+
+
 def test_grep_glob_and_explore_are_look_alikes() -> None:
     r = analyse(
         [
