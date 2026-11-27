@@ -671,6 +671,22 @@ def test_the_committed_markers_load() -> None:
     assert markers[0]["id"] == "collection-on-co-index"
 
 
+@pytest.mark.parametrize(
+    ("date", "at"),
+    [
+        ("2026-11-23T20:00:00", "2026-11-23T20:00:00Z"),
+        ("2026-11-23T20:00:00Z", "2026-11-23T20:00:00"),
+    ],
+)
+def test_a_marker_time_without_a_zone_is_refused(tmp_path, date, at) -> None:
+    """CR 7: it loaded, then the first comparison raised TypeError."""
+    path = tmp_path / "m.json"
+    marker = {"id": "x", "date": date, "reach": [{"host": "h", "at": at}]}
+    path.write_text(json.dumps({"markers": [marker]}))
+    with pytest.raises(ur.Usage):
+        ur.load_markers(path)
+
+
 def test_a_malformed_markers_file_is_refused(tmp_path) -> None:
     bad = tmp_path / "m.json"
     bad.write_text(json.dumps({"markers": [{"id": "x", "reach": [{"repo": "y"}]}]}))

@@ -191,16 +191,23 @@ def _json(text: str | None):
 # --- markers -----------------------------------------------------------------
 
 
+def _aware(text: str) -> datetime:
+    when = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if when.tzinfo is None:
+        raise ValueError(f"{text!r} has no zone: end it Z")
+    return when
+
+
 def load_markers(path: Path) -> list[dict]:
     try:
         doc = json.loads(Path(path).read_text())
         markers = doc["markers"]
         for m in markers:
-            datetime.fromisoformat(m["date"].replace("Z", "+00:00"))
+            _aware(m["date"])
             for reach in m["reach"]:
                 if len({"repo", "host"} & set(reach)) != 1:
                     raise ValueError(f"{m['id']}: a reach names one repo or one host")
-                datetime.fromisoformat(reach["at"].replace("Z", "+00:00"))
+                _aware(reach["at"])
             str(m["id"])
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         raise Usage(f"markers {path}: {exc}") from exc
