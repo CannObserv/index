@@ -1275,10 +1275,17 @@ def write_report(out: Path, loaded: Loaded, result: Analysis, args, sample_rows)
                 {"host": host, "repo": repo, "period": per, "measure": m, "value": c[m]}
             )
     _write_csv(out / "counts.csv", count_rows, ["host", "repo", "period", "measure", "value"])
+    ag = result.agreement
+    beside = {
+        "agreement_n": ag.n,
+        "agreement_lower": None if ag.lower is None else round(ag.lower, 4),
+        "agreement_upper": None if ag.upper is None else round(ag.upper, 4),
+        "established": "yes" if ag.established else "no",
+    }
     _write_csv(
         out / "classification.csv",
-        result.classification,
-        ["host", "repo", "period", "pass", "class", "calls"],
+        [{**r, **beside} for r in result.classification],
+        ["host", "repo", "period", "pass", "class", "calls", *beside],
     )
     _write_csv(out / "efficiency_calls.csv", result.efficiency_calls, EFFICIENCY_CALL_FIELDS)
     _write_csv(
@@ -1371,11 +1378,25 @@ def write_report(out: Path, loaded: Loaded, result: Analysis, args, sample_rows)
             ["pass", "class", "calls"],
         )
     )
+    md += ["### By period (final pass)", "", result.agreement.line(), ""]
+    per_period = defaultdict(dict)
+    for r in result.classification:
+        if r["period"] != "all" and r["pass"] == "final":
+            per_period[(r["host"], r["repo"], r["period"])][r["class"]] = r["calls"]
     md.append(
-        "Per period in classification.csv. Every trend there reads beside the agreement line "
-        "above, and reads as established only when it says so."
+        _md_table(
+            [
+                {"host": h, "repo": rp, "period": p, **cl}
+                for (h, rp, p), cl in sorted(per_period.items())
+            ],
+            ["host", "repo", "period", *CLASSES],
+        )
     )
-    md += ["", "## Efficiency per call", ""]
+    md.append(
+        "classification.csv carries the agreement on every row. A trend reads as established "
+        "only when the agreement says so."
+    )
+    md += ["", "## Efficiency per call", "", result.agreement.line(), ""]
     md.append(
         _md_table(
             result.efficiency_calls,

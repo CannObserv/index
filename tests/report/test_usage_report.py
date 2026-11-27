@@ -1282,6 +1282,25 @@ def test_the_ambiguous_set_goes_out_and_its_labels_come_back(tmp_path) -> None:
     assert list(csv.DictReader((out / "ambiguous.csv").open())) == []  # CR 47: resolved, gone
 
 
+def test_agreement_is_printed_beside_every_trend(tmp_path) -> None:
+    """CR 65: the design prints it beside the trends; the per-period
+    classification is the trend, and it lived in a CSV without it."""
+    markers = tmp_path / "m.json"
+    markers.write_text(json.dumps({"markers": MARKERS}))
+    out = tmp_path / "data"
+    out.mkdir(mode=0o700)
+    (out / "labels.csv").write_text("tool_use_id,label\nsem1,semantic\nex1,exact\n")
+    assert _run(_sample_lines(), "-", "--markers", str(markers), out=out).returncode == 0
+    rows = list(csv.DictReader((out / "classification.csv").open()))
+    assert rows and all(r["agreement_n"] == "2" and r["established"] == "no" for r in rows)
+    assert all(float(r["agreement_lower"]) < 1.0 for r in rows)
+    report = (out / "report.md").read_text()
+    assert "### By period (final pass)" in report
+    assert "| co-index | index | from collection-on-co-index |" in report
+    efficiency = report.split("## Efficiency per call", 1)[1].split("##", 1)[0]
+    assert "Agreement: 2 of 2" in efficiency  # its classes read beside it too
+
+
 def test_the_sample_for_the_operator_is_seeded_and_unlabelled(tmp_path) -> None:
     out = tmp_path / "data"
     assert _run(_sample_lines(), "-", "--sample", "2", "--seed", "7", out=out).returncode == 0
