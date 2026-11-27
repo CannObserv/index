@@ -1106,6 +1106,7 @@ def test_the_sample_for_the_operator_is_seeded_and_unlabelled(tmp_path) -> None:
     first = (out / "label-sample.csv").read_text()
     rows = list(csv.DictReader(first.splitlines()))
     assert len(rows) == 2 and all(r["label"] == "" for r in rows)
+    assert stat.S_IMODE((out / "label-sample.csv").stat().st_mode) == 0o600  # CR 37
     assert {r["tool_use_id"] for r in rows} <= {"amb1", "sem1", "ex1"}
     assert _run(_sample_lines(), "-", "--sample", "2", "--seed", "7", out=out).returncode == 0
     assert (out / "label-sample.csv").read_text() == first
