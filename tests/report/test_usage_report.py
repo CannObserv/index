@@ -923,6 +923,14 @@ def test_agreement_counts_an_unresolved_call_as_a_disagreement() -> None:
     assert not ag.established
 
 
+def test_labels_that_name_no_grep_like_call_are_reported_as_such() -> None:
+    """CR 29: the line said "no operator labels yet"."""
+    ag = analyse([index_call(use_id="i1")], labels={"i1": "exact", "x": "semantic"}).agreement
+    assert ag.n == 0 and ag.unmatched == 2
+    assert "2 labels match no grep-like call" in ag.line()
+    assert "no operator labels" not in ag.line()
+
+
 def test_agreement_is_established_when_its_lower_bound_reaches_the_threshold() -> None:
     recs = [bash("rg -n Foo.bar", use_id=f"u{i}") for i in range(60)]
     labels = {f"u{i}": "exact" for i in range(60)}

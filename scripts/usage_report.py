@@ -863,6 +863,11 @@ class Agreement:
         return self.lower is not None and self.lower >= self.threshold
 
     def line(self) -> str:
+        if not self.n and self.unmatched:
+            return (
+                f"Agreement: none measured: {self.unmatched} labels match no grep-like call. "
+                "No trend is established."
+            )
         if not self.n:
             return "Agreement: no operator labels yet (#37). No trend is established."
         rate = self.agree / self.n
