@@ -998,6 +998,18 @@ def test_a_sweep_threshold_below_one_is_a_usage_error(tmp_path, n) -> None:
     assert res.returncode == 64
 
 
+def test_a_planted_link_in_data_is_not_written_through(tmp_path) -> None:
+    """CR 17: the private writer followed a symlink at its path."""
+    out = tmp_path / "data"
+    out.mkdir(mode=0o700)
+    target = tmp_path / "elsewhere"
+    target.write_text("keep")
+    (out / "ambiguous.csv").symlink_to(target)
+    res = _run(_sample_lines(), "-", out=out)
+    assert res.returncode == 64
+    assert target.read_text() == "keep"
+
+
 def test_no_records_writes_nothing_and_exits_1(tmp_path) -> None:
     out = tmp_path / "data"
     res = _run("", "-", out=out)

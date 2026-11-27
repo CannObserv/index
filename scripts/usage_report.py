@@ -1126,7 +1126,7 @@ def _context(call: Call, calls_in_prompt: list[Call]) -> str:
 
 
 def _private_writer(path: Path):
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
     os.fchmod(fd, 0o600)
     return os.fdopen(fd, "w", newline="")
 
