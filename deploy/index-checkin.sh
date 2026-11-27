@@ -59,6 +59,26 @@ code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
 open=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${QURL}/collections" || echo 000)
 [ "$open" = "401" ] || add qdrant auth "unauthenticated read returned ${open}, expected 401"
 
+# The cohort's declared links (#38): each sibling a repo's .socraticode.json
+# links must name a codebase_<projectId> that holds points. Only once the
+# store answered: a down store is qdrant:collections, one finding. The key
+# goes as its file's path. link-check.py caches GitHub's copies for hours, so
+# this fetches nothing on most ticks. Exit 1 is one `subject<TAB>message` line
+# per finding; 2 is unknown, no finding (Qdrant blinked since the read above);
+# anything else, or 1 with nothing said, is the check broken, and heard.
+if [ "$code" = "200" ]; then
+  rc=0
+  links=$(/usr/local/bin/link-check.py check "$QURL" /etc/socraticode/qdrant.key \
+    /usr/local/share/co-index/cohort.json /var/cache/co-index/links.json) || rc=$?
+  if [ "$rc" -eq 1 ] && [ -n "$links" ]; then
+    while IFS=$'\t' read -r subject message; do
+      add links "$subject" "$message"
+    done <<< "$links"
+  elif [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
+    add links check "link check exited ${rc}"
+  fi
+fi
+
 # Ollama, and the one model the cohort's vectors are comparable under (D7).
 curl -sf --max-time 10 "http://${ADDR}:11434/api/tags" -o /tmp/index-checkin-tags.json \
   || add ollama tags "not reachable"

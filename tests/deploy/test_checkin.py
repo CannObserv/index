@@ -37,6 +37,13 @@ are co-status's credentials, so they are named for it: ``STATUS_API_KEY`` and
   before the cap deletes anything. ``otel:retention``: that run hasn't
   succeeded in 36 hours, which would otherwise end the 90-day prune silently.
 
+- **The cohort's declared links (#38).** ``link-check.py`` exits 1 with one
+  ``subject<TAB>message`` line per finding, each the ``links:<subject>``
+  finding, in its order. Exit 2 is unknown, no finding: Qdrant didn't answer
+  it, and ``qdrant:collections`` is that finding. Any other exit, or 1 with
+  nothing said, is ``links:check``: a broken check is heard. It runs only
+  once the authenticated read returned 200, so a down store is one finding.
+
 The script runs from a copy whose host paths point into ``tmp_path``, with
 ``curl`` and ``openssl`` stubbed on ``PATH``. Nothing leaves the test, and on
 co-index it never touches the live timer's files.
@@ -56,7 +63,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "deploy" / "index-checkin.sh"
 HOST_PATHS = re.compile(
     r"/etc/socraticode/|/usr/local/bin/|/usr/local/share/co-index/|/tmp/index-checkin-"
-    r"|/var/lib/otelcol"
+    r"|/var/lib/otelcol|/var/cache/co-index/"
 )
 RETENTION = REPO_ROOT / "deploy" / "otelcol-retention.sh"
 STAMP = ".retention-ok"
@@ -92,6 +99,14 @@ def host(tmp_path: Path) -> Path:
         'printf "%s\\n" "$*" >> "$CURL_LOG.fp"\n'
         '[[ -z ${STUB_FP_OUT:-} ]] || printf "%s\\n" "$STUB_FP_OUT"\n'
         'exit "${STUB_FP_EXIT:-0}"\n',
+    )
+    # Logs its argv, prints STUB_LINKS_OUT (\t and \n as escapes), exits
+    # STUB_LINKS_EXIT (0: clean).
+    _stub(
+        bin_dir / "link-check.py",
+        'printf "%s\\n" "$*" >> "$CURL_LOG.links"\n'
+        '[[ -z ${STUB_LINKS_OUT:-} ]] || printf "%b\\n" "$STUB_LINKS_OUT"\n'
+        'exit "${STUB_LINKS_EXIT:-0}"\n',
     )
     # One line per call in each log: its argv as `ps` shows it, and what it
     # was sent, with each `-H @file` read. Plus any credential name it was
@@ -142,6 +157,7 @@ def _run(host: Path, healthy: bool = False, **env: str) -> subprocess.CompletedP
         "/usr/local/share/co-index/": f"{host}/share/",
         "/tmp/index-checkin-": f"{host}/tmp/index-checkin-",
         "/var/lib/otelcol": f"{host}/otelcol",
+        "/var/cache/co-index/": f"{host}/cache/",
     }
     copy = host / "index-checkin.sh"
     copy.write_text(HOST_PATHS.sub(lambda m: local[m.group()], SCRIPT.read_text()))
@@ -507,3 +523,74 @@ def test_the_checkin_is_ordered_after_the_collector() -> None:
     unit = (REPO_ROOT / "deploy" / "index-checkin.service").read_text()
     [after] = re.findall(r"^After=(.*)$", unit, re.M)
     assert {"qdrant.service", "ollama.service", "otelcol.service"} <= set(after.split())
+
+
+def _link_calls(host: Path) -> list[str]:
+    log = host / "curl.log.links"
+    return log.read_text().splitlines() if log.exists() else []
+
+
+def test_the_links_are_checked_against_the_store_clients_use(host: Path) -> None:
+    """The same URL, the key as a file path and never its value, the
+    installed list, and a cache under /var/cache."""
+    _write(host, "status.env", STATUS_ENV)
+    assert _run(host, healthy=True).returncode == 0
+    [call] = _link_calls(host)
+    assert call.split() == [
+        "check",
+        "https://index.taild0fb76.ts.net:6333",
+        f"{host}/etc/socraticode/qdrant.key",
+        f"{host}/share/cohort.json",
+        f"{host}/cache/links.json",
+    ]
+    assert QDRANT_KEY not in call
+    assert _body(host)["status"] == "ok"
+
+
+def test_each_link_finding_rides_the_checkin_in_its_order(host: Path) -> None:
+    _write(host, "status.env", STATUS_ENV)
+    out = "cache\\tno good fetch from GitHub in 25 h\\nnotifier/watcher\\t../watcher: no collection"
+    assert _run(host, healthy=True, STUB_LINKS_OUT=out, STUB_LINKS_EXIT="1").returncode == 0
+    assert _fault(host) == ["links:cache", "links:notifier/watcher"]
+    assert _finding(host, "links:notifier/watcher")["message"] == "../watcher: no collection"
+    assert _body(host)["variables"]["finding_count"] == 2
+
+
+def test_link_findings_come_after_the_stores_and_before_ollamas(host: Path) -> None:
+    """The fault key is in the checks' fixed order (#10)."""
+    _write(host, "status.env", STATUS_ENV)
+    result = _run(
+        host,
+        healthy=True,
+        STUB_LINKS_OUT="status/ghost\\tx",
+        STUB_LINKS_EXIT="1",
+        STUB_FP_OUT="drift",
+        STUB_FP_EXIT="1",
+    )
+    assert result.returncode == 0
+    assert _fault(host) == ["links:status/ghost", "ollama:engine"]
+
+
+def test_an_unknown_link_check_is_no_finding(host: Path) -> None:
+    _write(host, "status.env", STATUS_ENV)
+    assert _run(host, healthy=True, STUB_LINKS_EXIT="2").returncode == 0
+    assert _body(host)["status"] == "ok"
+
+
+@pytest.mark.parametrize(("code", "out"), [("3", ""), ("127", ""), ("1", "")])
+def test_a_broken_link_check_is_heard(host: Path, code: str, out: str) -> None:
+    """3 is its own failure, 127 a missing install, 1 with nothing said a
+    crash: none of them is a clean cohort."""
+    _write(host, "status.env", STATUS_ENV)
+    result = _run(host, healthy=True, STUB_LINKS_EXIT=code, STUB_LINKS_OUT=out)
+    assert result.returncode == 0, result.stderr
+    assert _fault(host) == ["links:check"]
+    assert code in _finding(host, "links:check")["message"]
+
+
+def test_links_are_not_checked_when_the_store_did_not_answer(host: Path) -> None:
+    """``qdrant:collections`` is that finding; a second would page one store twice."""
+    _write(host, "status.env", STATUS_ENV)
+    assert _run(host, STUB_LINKS_EXIT="3").returncode == 0
+    assert _link_calls(host) == []
+    assert not [k for k in _fault(host) if k.startswith("links:")]
