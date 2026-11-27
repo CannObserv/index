@@ -1365,7 +1365,10 @@ def write_report(out: Path, loaded: Loaded, result: Analysis, args, sample_rows)
         md.append(
             _md_table([{"measure": m, "value": c[m]} for m in measures], ["measure", "value"])
         )
-    md += ["## Classification of grep-like calls", "", result.agreement.line(), ""]
+    heading = "## Classification of grep-like calls"
+    if not result.agreement.established:
+        heading += ": provisional, gated on #37's labels"
+    md += [heading, "", result.agreement.line(), ""]
     md.append(
         "Rules first (exact-string / semantic stand-in / ambiguous); the session's model "
         "labels the ambiguous through `ambiguous.csv` → `ambiguous-labels.csv`. "

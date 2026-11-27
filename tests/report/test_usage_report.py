@@ -1301,6 +1301,18 @@ def test_agreement_is_printed_beside_every_trend(tmp_path) -> None:
     assert "Agreement: 2 of 2" in efficiency  # its classes read beside it too
 
 
+def test_the_classification_is_provisional_until_a_trend_is_established(tmp_path) -> None:
+    """CR 66: the design gates the classification tables on #37's labels."""
+    out = tmp_path / "data"
+    assert _run(_sample_lines(), "-", out=out).returncode == 0
+    head = "## Classification of grep-like calls: provisional, gated on #37's labels"
+    assert head in (out / "report.md").read_text()
+    (out / "labels.csv").write_text("tool_use_id,label\nsem1,semantic\nex1,exact\n")
+    assert _run(_sample_lines(), "-", "--agreement-threshold", "0.1", out=out).returncode == 0
+    report = (out / "report.md").read_text()
+    assert "## Classification of grep-like calls\n" in report and "provisional" not in report
+
+
 def test_the_sample_for_the_operator_is_seeded_and_unlabelled(tmp_path) -> None:
     out = tmp_path / "data"
     assert _run(_sample_lines(), "-", "--sample", "2", "--seed", "7", out=out).returncode == 0
