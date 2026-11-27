@@ -282,6 +282,7 @@ from the checkout's root:
 ```bash
 sudo install -m 755 deploy/*.sh deploy/*.py /usr/local/bin/
 sudo install -D -m 644 deploy/engine-fingerprint.json /usr/local/share/co-index/engine-fingerprint.json
+sudo install -D -m 644 deploy/cohort.json /usr/local/share/co-index/cohort.json
 sudo install -D -m 644 deploy/otelcol.yaml /usr/local/share/co-index/otelcol.yaml
 sudo install -m 644 deploy/*.service deploy/*.timer /etc/systemd/system/
 sudo install -D -m 644 deploy/needrestart.conf.d/index.conf /etc/needrestart/conf.d/index.conf
