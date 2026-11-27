@@ -109,13 +109,37 @@ def _value(v: dict):
 
 
 def _attrs(items) -> dict:
-    return {a["key"]: _value(a.get("value", {})) for a in items or [] if "key" in a}
+    """OTLP's key/value list; an item that isn't a key/value object raises."""
+    out = {}
+    for a in items or []:
+        if not isinstance(a, dict) or not isinstance(a.get("value", {}), dict):
+            raise TypeError("an attribute isn't a key/value object")
+        if "key" in a:
+            out[a["key"]] = _value(a.get("value", {}))
+    return out
 
 
 def _when(text: str | None, nanos) -> datetime:
     if text:
         return _aware(text)
     return datetime.fromtimestamp(int(nanos or 0) / 1e9, tz=UTC)
+
+
+def _list(value) -> list:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise TypeError(f"expected a list, got {type(value).__name__}")
+    return value
+
+
+def _log_records(doc):
+    """(resource, attributes, log record) per record of one export, or raise."""
+    for rl in _list(doc["resourceLogs"]):
+        resource = _attrs(_list(rl.get("resource", {}).get("attributes")))
+        for sl in _list(rl.get("scopeLogs")):
+            for lr in _list(sl.get("logRecords")):
+                yield resource, _attrs(_list(lr.get("attributes"))), lr
 
 
 def load_records(lines) -> Loaded:
@@ -127,62 +151,49 @@ def load_records(lines) -> Loaded:
             continue
         out.lines += 1
         try:
-            doc = json.loads(line)
-            resource_logs = doc["resourceLogs"]
-            if not isinstance(resource_logs, list):
-                raise TypeError("resourceLogs is no list")
-        except (ValueError, KeyError, TypeError):
-            out.bad_lines += 1
+            entries = list(_log_records(json.loads(line)))
+        except (ValueError, KeyError, TypeError, AttributeError):
+            out.bad_lines += 1  # its shape isn't OTLP/JSON logs: none of it is read
             continue
-        for rl in resource_logs:
-            resource = _attrs(rl.get("resource", {}).get("attributes"))
-            for sl in rl.get("scopeLogs", []):
-                for lr in sl.get("logRecords", []):
-                    attrs = _attrs(lr.get("attributes"))
-                    event = attrs.get("event.name")
-                    if event not in ("tool_result", "api_request"):
-                        continue
-                    session = str(attrs.get("session.id", ""))
-                    if session in EXCLUDED_SESSIONS:
-                        out.excluded += 1
-                        continue
-                    # event.sequence alone isn't unique: two distinct records
-                    # shared it on co-index (2026-11-27). The id is.
-                    key = (
-                        session,
-                        event,
-                        str(attrs.get("event.sequence")),
-                        str(
-                            attrs.get("tool_use_id")
-                            or attrs.get("request_id")
-                            or lr.get("timeUnixNano")
-                        ),
-                    )
-                    if key in seen:
-                        out.duplicates += 1
-                        continue
-                    try:
-                        record = Record(
-                            event=event,
-                            host=str(
-                                resource.get("cohort.host") or attrs.get("cohort.host") or "?"
-                            ),
-                            repo=str(
-                                attrs.get("vcs.repository.name")
-                                or resource.get("vcs.repository.name")
-                                or "?"
-                            ),
-                            session=session,
-                            prompt=str(attrs.get("prompt.id") or ""),
-                            seq=int(attrs.get("event.sequence") or 0),
-                            ts=_when(attrs.get("event.timestamp"), lr.get("timeUnixNano")),
-                            attrs=attrs,
-                        )
-                    except (ValueError, TypeError):
-                        out.bad_records += 1
-                        continue
-                    seen.add(key)
-                    out.records.append(record)
+        for resource, attrs, lr in entries:
+            event = attrs.get("event.name")
+            if event not in ("tool_result", "api_request"):
+                continue
+            session = str(attrs.get("session.id", ""))
+            if session in EXCLUDED_SESSIONS:
+                out.excluded += 1
+                continue
+            # event.sequence alone isn't unique: two distinct records
+            # shared it on co-index (2026-11-27). The id is.
+            key = (
+                session,
+                event,
+                str(attrs.get("event.sequence")),
+                str(attrs.get("tool_use_id") or attrs.get("request_id") or lr.get("timeUnixNano")),
+            )
+            if key in seen:
+                out.duplicates += 1
+                continue
+            try:
+                record = Record(
+                    event=event,
+                    host=str(resource.get("cohort.host") or attrs.get("cohort.host") or "?"),
+                    repo=str(
+                        attrs.get("vcs.repository.name")
+                        or resource.get("vcs.repository.name")
+                        or "?"
+                    ),
+                    session=session,
+                    prompt=str(attrs.get("prompt.id") or ""),
+                    seq=int(attrs.get("event.sequence") or 0),
+                    ts=_when(attrs.get("event.timestamp"), lr.get("timeUnixNano")),
+                    attrs=attrs,
+                )
+            except (ValueError, TypeError, AttributeError):
+                out.bad_records += 1
+                continue
+            seen.add(key)
+            out.records.append(record)
     return out
 
 

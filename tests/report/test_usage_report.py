@@ -275,6 +275,29 @@ def test_a_timestamp_without_a_zone_is_a_bad_record() -> None:
     assert len(loaded.records) == 1 and loaded.bad_records == 1
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        '{"resourceLogs": [{"scopeLogs": "x"}]}',
+        '{"resourceLogs": [{"scopeLogs": [{"logRecords": 5}]}]}',
+        '{"resourceLogs": ["x"]}',
+        '{"resourceLogs": [{"resource": {"attributes": ["x"]}, "scopeLogs": []}]}',
+        "[1, 2]",
+    ],
+)
+def test_a_badly_shaped_line_is_a_bad_line_not_a_crash(line) -> None:
+    """CR 39: these raised outside the try: a traceback, exit 1."""
+    loaded = ur.load_records([line, export([tool("Read")])])
+    assert loaded.bad_lines == 1 and len(loaded.records) == 1
+
+
+def test_a_timestamp_that_isnt_text_is_a_bad_record() -> None:
+    rec = tool("Read")
+    rec["event.timestamp"] = True  # boolValue
+    loaded = ur.load_records([export([rec, tool("Read")])])
+    assert loaded.bad_records == 1 and len(loaded.records) == 1
+
+
 def test_an_unparseable_line_is_counted_and_skipped() -> None:
     loaded = ur.load_records(["{not json", "", export([tool("Read")])])
     assert len(loaded.records) == 1 and loaded.bad_lines == 1
