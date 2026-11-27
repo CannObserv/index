@@ -900,6 +900,7 @@ class Analysis:
     efficiency_requests: list[dict]
     agreement: Agreement
     requests: int = 0
+    markers: list = field(default_factory=list)  # each: id, reached, left_out
 
 
 def wilson(k: int, n: int, z: float = 1.96) -> tuple[float | None, float | None]:
@@ -1099,7 +1100,20 @@ def analyse(
                 agreement.agree += 1
         agreement.lower, agreement.upper = wilson(agreement.agree, agreement.n)
 
+    pairs = sorted({(r.host, r.repo) for r in records})
+    marker_reach = []
+    for m in markers:
+        hit = [p for p in pairs if any(mid == m["id"] for _, mid in _boundaries([m], *p))]
+        marker_reach.append(
+            {
+                "id": m["id"],
+                "reached": [f"{h} · {r}" for h, r in hit],
+                "left_out": [f"{h} · {r}" for h, r in pairs if (h, r) not in hit],
+            }
+        )
+
     return Analysis(
+        markers=marker_reach,
         calls=calls,
         counts=dict(counts),
         classification=classification,
@@ -1288,7 +1302,27 @@ def write_report(out: Path, loaded: Loaded, result: Analysis, args, sample_rows)
         f"duplicates dropped {loaded.duplicates}, "
         f"excluded (proof sessions) {loaded.excluded}."
     )
-    md += ["", "## Counts", ""]
+    md += ["", "## Markers", ""]
+    md.append(
+        "A marker splits only the hosts and repos its reach names. One it hasn't reached is "
+        "left out of its before-and-after split, rather than guessed: its calls stay in the "
+        "period before."
+    )
+    md.append("")
+    md.append(
+        _md_table(
+            [
+                {
+                    "marker": m["id"],
+                    "reached": ", ".join(m["reached"]) or "–",
+                    "left out": ", ".join(m["left_out"]) or "–",
+                }
+                for m in result.markers
+            ],
+            ["marker", "reached", "left out"],
+        )
+    )
+    md += ["## Counts", ""]
     md.append(
         "Per host, repo and period, split at docs/usage-markers.json's reach. An index call "
         "is `mcp_tool` naming SocratiCode's server in `tool_parameters`. **A period with "

@@ -832,6 +832,33 @@ def test_a_host_and_repo_no_marker_reached_is_one_unsplit_period() -> None:
     assert [k[2] for k in keys] == ["unsplit"]
 
 
+def test_each_marker_names_the_pairs_it_leaves_out_of_its_split() -> None:
+    """CR 43: a pair a marker hasn't reached has no period for it; the report
+    says so instead of leaving the reader to notice."""
+    loaded = ur.load_records(
+        [
+            export([index_call(), index_call(repo="notifier")]),
+            export([index_call(repo="notifier")], host="co-notifier"),
+        ]
+    )
+    r = ur.analyse(loaded.records, markers=MARKERS, cohort=COHORT)
+    by_id = {m["id"]: m for m in r.markers}
+    assert by_id["policy-v2"]["reached"] == ["co-index · index"]
+    assert by_id["policy-v2"]["left_out"] == ["co-index · notifier", "co-notifier · notifier"]
+    assert by_id["collection-on-co-index"]["left_out"] == ["co-notifier · notifier"]
+
+
+def test_the_report_lists_each_markers_left_out_pairs(tmp_path) -> None:
+    markers = tmp_path / "m.json"
+    markers.write_text(json.dumps({"markers": MARKERS}))
+    out = tmp_path / "data"
+    lines = _sample_lines() + export([index_call()], host="co-notifier") + "\n"
+    assert _run(lines, "-", "--markers", str(markers), out=out).returncode == 0
+    report = (out / "report.md").read_text()
+    assert "## Markers" in report
+    assert "| policy-v2 |" in report and "co-notifier · index" in report
+
+
 def test_the_committed_markers_load() -> None:
     markers = ur.load_markers(REPO_ROOT / "docs" / "usage-markers.json")
     assert markers[0]["id"] == "collection-on-co-index"

@@ -59,4 +59,5 @@ the merge date:
 
 Add each repo's reach as it lands, by editing the entry. Until a repo's reach
 is recorded, the report leaves that repo out of the before-and-after split
-rather than guessing.
+rather than guessing: its calls stay in the period before. `report.md` lists
+each marker with the hosts and repos it has reached, and those it leaves out.
