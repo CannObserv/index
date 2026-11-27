@@ -198,6 +198,18 @@ def test_records_take_the_host_from_the_resource_and_coerce_string_numbers() -> 
     assert isinstance(rec.ts, datetime)
 
 
+def test_the_repo_is_read_from_the_resource_when_the_record_lacks_it() -> None:
+    """CR 28: the design's § Collector puts vcs.repository.name on the resource."""
+    rec = tool("Read")
+    rec["vcs.repository.name"] = None
+    line = json.loads(export([rec]))
+    line["resourceLogs"][0]["resource"]["attributes"].append(
+        {"key": "vcs.repository.name", "value": {"stringValue": "notifier"}}
+    )
+    [r] = ur.load_records([json.dumps(line)]).records
+    assert r.repo == "notifier"
+
+
 def test_a_missing_size_stays_missing_never_zero() -> None:
     """2.1.330 omits it on a record with ``error_type``."""
     loaded = ur.load_records([export([tool("Bash", None, None, size=None)])])

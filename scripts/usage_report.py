@@ -167,7 +167,11 @@ def load_records(lines) -> Loaded:
                             host=str(
                                 resource.get("cohort.host") or attrs.get("cohort.host") or "?"
                             ),
-                            repo=str(attrs.get("vcs.repository.name") or "?"),
+                            repo=str(
+                                attrs.get("vcs.repository.name")
+                                or resource.get("vcs.repository.name")
+                                or "?"
+                            ),
                             session=session,
                             prompt=str(attrs.get("prompt.id") or ""),
                             seq=int(attrs.get("event.sequence") or 0),
