@@ -1253,6 +1253,21 @@ def test_the_seed_decides_the_draw(tmp_path) -> None:
     assert draws[0] != draws[1]
 
 
+def test_the_report_says_how_many_ambiguous_calls_await_the_model(tmp_path) -> None:
+    """CR 58: untested lines: the count awaiting the model, and a call that
+    both filters and searches."""
+    out = tmp_path / "data"
+    assert _run(_sample_lines(), "-", out=out).returncode == 0
+    assert "Ambiguous awaiting the model: 1." in (out / "report.md").read_text()
+
+
+def test_a_bash_call_that_filters_and_searches_is_a_search() -> None:
+    r = analyse([bash("ps aux | grep qdrant && rg -n Foo.bar")])
+    [call] = r.calls
+    assert call.kind == "grep_like" and call.rule == "exact"
+    assert count(r, "bash_filter") == 0 and count(r, "lookalike:bash_search") == 1
+
+
 def test_operator_labels_are_read_from_the_data_directory(tmp_path) -> None:
     out = tmp_path / "data"
     out.mkdir(mode=0o700)
