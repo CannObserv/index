@@ -634,6 +634,15 @@ stays until the next `--sample`.
   command's output and counts as `bash_filter`, not as a look-alike.
 - **A read sweep** is 3 or more Reads in one `prompt.id` before any search
   (`--sweep-reads`).
+- **Look-alikes and follow-ups are split by class.** For example,
+  `lookalike:bash_search:exact|semantic|ambiguous` and
+  `followup:grep_after_search:<class>`. A total alone is no finding: an
+  exact-string grep is correct use.
+- **Sibling access is split by route** (`sibling:clone`, `sibling:fetch`,
+  `sibling:read`), beside `codebase_search_linked`.
+- **Agreement** sits on every `classification.csv` row, and beside each
+  classification table in `report.md`. That section's heading reads
+  "provisional" until a trend is established.
 - **Subagents** share their parent's `prompt.id`, so their calls count
   under `subagent:` measures (`subagent:lookalike:grep_tool`, and so on).
   Sweeps and follow-ups are the main thread's. Paths and classes take

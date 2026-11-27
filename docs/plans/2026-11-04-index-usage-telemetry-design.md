@@ -360,4 +360,11 @@ configs are read within D18.
   - #54's boundary is read by shape (`mcp_unidentified`, whose period's
     index count is a floor), not recorded as a marker.
 
+- **`data/` is regenerable except for its two label files,** the operator's
+  `labels.csv` and the model's `ambiguous-labels.csv`. A run never writes
+  either of them.
+- **The report doesn't count correct use as failure:** look-alikes and
+  follow-ups are split by class, and the classification reads as provisional
+  until #37's labels establish a trend.
+
 Detail: `deploy/README.md`, "Usage report".
