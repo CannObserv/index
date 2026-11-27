@@ -264,9 +264,11 @@ number.
 confirms the sibling's `projectId` names a `codebase_*` collection that
 exists and holds points. Findings ride `index-checkin.sh` to co-status, at
 a cadence that doesn't fetch from GitHub every 10 minutes. Private repos
-(`status`, `observo`) are read with a token or listed by hand, the
-builder's call within D18's bounds. The cohort repo list lives in one
-place; D17's client list is today's.
+(`observo`, `provisioner`) are read with a token or listed by hand, the
+builder's call within D18's bounds: listed by hand (#38), since `.env`'s
+tokens are for issues. `status` went public after this was written. The
+cohort repo list lives in one place, `deploy/cohort.json`, held to D17's
+client list.
 
 **VM-side, upstream.** Only the VM can see whether a link resolves to a
 stub or a full clone. The daily health hook already reports unresolved

@@ -1,0 +1,36 @@
+{
+  "raw": "https://raw.githubusercontent.com/CannObserv",
+  "repos": [
+    {"repo": "notifier", "tag": "tag:notifier"},
+    {"repo": "watcher", "tag": "tag:watcher"},
+    {"repo": "archiver", "tag": "tag:archiver"},
+    {"repo": "replicator", "tag": "tag:replicator"},
+    {"repo": "broker", "tag": "tag:broker"},
+    {"repo": "status", "tag": "tag:status"},
+    {
+      "repo": "observo",
+      "tag": "tag:observo-primary",
+      "private": true,
+      "hand_listed": {
+        "as_of": "2026-11-26",
+        "source": "CannObserv/index#38, coordinator brief",
+        "config": {"projectId": "observo", "linkedProjects": ["../broker", "../power-map"]}
+      }
+    },
+    {"repo": "power-map", "tag": "tag:power-map"},
+    {"repo": "processor", "tag": "tag:processor"},
+    {"repo": "address-validator", "tag": "tag:address-validator"},
+    {
+      "repo": "provisioner",
+      "tag": "tag:provisioner",
+      "private": true,
+      "hand_listed": {
+        "as_of": "2026-11-26",
+        "source": "CannObserv/index#38, coordinator brief",
+        "config": null
+      }
+    },
+    {"repo": "usa-wa", "tag": "tag:usa-wa"},
+    {"repo": "index", "tag": "tag:index"}
+  ]
+}
