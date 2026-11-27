@@ -32,7 +32,11 @@ def _sentences(text: str) -> list[str]:
 
 
 def _proofs_by_nrestarts(text: str) -> list[str]:
-    """A sentence naming it must be the reboot check, or say what it counts."""
+    """A sentence naming it must be the reboot check, or say what it counts.
+
+    A heuristic, by words: "reboot" or "counts only" anywhere in the sentence
+    exempts it, so "after the reboot, read ``NRestarts`` before and after"
+    would pass. A tighter rule would parse prose, and break on rewording."""
     uses = [s for s in _sentences(text) if "NRestarts" in s]
     return [s for s in uses if "reboot" not in s and "counts only" not in s]
 
