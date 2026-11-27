@@ -51,6 +51,7 @@ EXCLUDED_SESSIONS = {"host-proof-33"}
 LABELS = ("exact", "semantic")
 CLASSES = ("exact", "semantic", "ambiguous")
 SWEEP_READS = 3
+SUBAGENT = "subagent:"  # the prefix of a measure counting subagents' calls
 THRESHOLD = 0.80
 
 
@@ -932,29 +933,36 @@ def analyse(
         call.siblings = _siblings_of(call, cohort)
         key = (call.rec.host, call.rec.repo, period(call.rec))
         c = counts[key]
-        c["tool_calls"] += 1
+        # A subagent shares its parent's prompt.id: its calls count apart, so
+        # one Explore isn't also counted as every Grep it ran.
+        pre = SUBAGENT if call.rec.get("agent_id") else ""
+        c[pre + "tool_calls"] += 1
         if call.kind == "index":
-            c["index_calls"] += 1
-            c[call.tool] += 1
+            c[pre + "index_calls"] += 1
+            c[pre + call.tool] += 1
             if call.tool == "index:codebase_search" and call.linked:
-                c["codebase_search_linked"] += 1
+                c[pre + "codebase_search_linked"] += 1
         elif call.kind in ("mcp_other", "mcp_unidentified"):
-            c[call.kind] += 1
+            c[pre + call.kind] += 1
         elif call.kind == "grep_like":
             c[
-                {"Grep": "lookalike:grep_tool", "Glob": "lookalike:glob"}.get(
+                pre
+                + {"Grep": "lookalike:grep_tool", "Glob": "lookalike:glob"}.get(
                     call.tool, "lookalike:bash_search"
                 )
             ] += 1
         elif call.kind == "bash_filter":
-            c["bash_filter"] += 1
+            c[pre + "bash_filter"] += 1
         elif call.kind == "explore":
-            c["lookalike:explore"] += 1
+            c[pre + "lookalike:explore"] += 1
         if call.siblings:
-            c["sibling_access"] += 1
+            c[pre + "sibling_access"] += 1
         by_prompt[(call.rec.session, call.rec.prompt)].append(call)
 
-    for seq in by_prompt.values():
+    for every in by_prompt.values():
+        seq = [c for c in every if not c.rec.get("agent_id")]  # the main thread's
+        if not seq:
+            continue
         key = (seq[0].rec.host, seq[0].rec.repo, period(seq[0].rec))
         reads = after_search = 0
         searched = searched_index = False
@@ -974,11 +982,12 @@ def analyse(
             counts[key]["followup:grep_after_search"] += after_search
             counts[key]["followup:prompts"] += 1
     for c in counts.values():
-        if c.get("mcp_unidentified"):
+        if c.get("mcp_unidentified") or c.get(SUBAGENT + "mcp_unidentified"):
             c["index_calls_floor"] = 1
-        if c.get("index:codebase_search"):
-            share = c.get("codebase_search_linked", 0) / c["index:codebase_search"]
-            c["codebase_search_linked_share"] = round(share, 3)
+        for pre in ("", SUBAGENT):
+            if c.get(pre + "index:codebase_search"):
+                share = c.get(pre + "codebase_search_linked", 0) / c[pre + "index:codebase_search"]
+                c[pre + "codebase_search_linked_share"] = round(share, 3)
     for r in apis:
         counts[(r.host, r.repo, period(r))]["api_requests"] += 1
 

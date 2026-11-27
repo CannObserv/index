@@ -677,6 +677,30 @@ def test_linked_searches_are_counted_beside_sibling_access() -> None:
     assert count(r, "codebase_search_linked") == 1
 
 
+def test_a_subagents_calls_count_apart_from_the_main_threads() -> None:
+    """CR 24: subagents share the parent's prompt.id (measured, 8 of 8), so one
+    Explore counted as an Explore, its Greps, and the parent's follow-ups."""
+    r = analyse(
+        [
+            index_call(ts="2026-11-28T10:00:00.000Z"),
+            tool("Grep", None, {"pattern": "auth"}, agent="a1", ts="2026-11-28T10:00:01.000Z"),
+            index_call(agent="a1", ts="2026-11-28T10:00:02.000Z"),
+            tool("Agent", {"subagent_type": "Explore"}, None, ts="2026-11-28T10:00:03.000Z"),
+        ]
+    )
+    assert count(r, "lookalike:explore") == 1
+    assert count(r, "lookalike:grep_tool") == 0
+    assert count(r, "subagent:lookalike:grep_tool") == 1
+    assert count(r, "index_calls") == 1 and count(r, "subagent:index_calls") == 1
+    assert count(r, "subagent:tool_calls") == 2 and count(r, "tool_calls") == 2
+    assert count(r, "followup:grep_after_search") == 0
+
+
+def test_a_subagents_reads_are_no_read_sweep_of_the_parent() -> None:
+    r = analyse([_read(p, agent="a1") for p in "abc"])
+    assert count(r, "lookalike:read_sweep") == 0
+
+
 def test_a_grep_after_a_codebase_search_in_the_same_prompt_is_a_follow_up() -> None:
     r = analyse(
         [
