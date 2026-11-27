@@ -807,9 +807,16 @@ def test_usage_is_exit_3(tmp_path: Path) -> None:
 # --- its budgets (CR 4) -----------------------------------------------------
 
 
-def _in_process(tmp_path: Path, base: str, **budgets: float) -> tuple[int, float]:
+def _in_process(
+    tmp_path: Path, base: str, monkeypatch: pytest.MonkeyPatch, **budgets: float
+) -> tuple[int, float]:
     """``main``, run here with its budgets shrunk: the real ones are tens of
-    seconds. Returns its exit and how long it took."""
+    seconds. Returns its exit and how long it took. A proxy in the runner's
+    environment would fail each request at once, and pass a budget test with
+    no budget at all (CR 13), so none is kept, as ``_run`` keeps none."""
+    for name in list(os.environ):
+        if name.lower().endswith("_proxy"):
+            monkeypatch.delenv(name)
     spec = importlib.util.spec_from_file_location("link_check", SCRIPT)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -845,7 +852,7 @@ def test_the_budgets_fit_inside_the_checkins_bound() -> None:
 
 
 def test_a_slow_github_is_a_failed_refresh_within_its_budget(
-    world: tuple[World, str], tmp_path: Path
+    world: tuple[World, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """urllib's timeout is per socket call, not per request: a server that
     answers slowly enough holds the check-in, and the dead-man's timer
@@ -855,18 +862,20 @@ def test_a_slow_github_is_a_failed_refresh_within_its_budget(
     _write_cache(tmp_path, fetched=7, attempted=7, repos={})
     before = _cache(tmp_path)["fetched_at"]
     state.raw_delay = 3
-    code, took = _in_process(tmp_path, base, REFRESH_BUDGET=0.5)
+    code, took = _in_process(tmp_path, base, monkeypatch, REFRESH_BUDGET=0.5)
+    assert state.fetched(), "the control: GitHub was asked, and was slow"
     assert code == 0
     assert took < 2.5
     assert _cache(tmp_path)["fetched_at"] == before
 
 
 def test_a_slow_qdrant_is_unknown_within_its_budget(
-    world: tuple[World, str], tmp_path: Path
+    world: tuple[World, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     state, base = world
     _healthy(state)
     state.qdrant_delay = 3
-    code, took = _in_process(tmp_path, base, QDRANT_BUDGET=0.5)
+    code, took = _in_process(tmp_path, base, monkeypatch, QDRANT_BUDGET=0.5)
+    assert any(m == "POST" for m, _, _ in state.requests), "the control: Qdrant was asked"
     assert code == 2
     assert took < 2.5
