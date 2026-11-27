@@ -972,6 +972,9 @@ def analyse(
     for c in counts.values():
         if c.get("mcp_unidentified"):
             c["index_calls_floor"] = 1
+        if c.get("index:codebase_search"):
+            share = c.get("codebase_search_linked", 0) / c["index:codebase_search"]
+            c["codebase_search_linked_share"] = round(share, 3)
     for r in apis:
         counts[(r.host, r.repo, period(r))]["api_requests"] += 1
 
@@ -1151,6 +1154,7 @@ COUNT_ORDER = [
     "mcp_unidentified",
     "mcp_other",
     "codebase_search_linked",
+    "codebase_search_linked_share",
     "lookalike:grep_tool",
     "lookalike:glob",
     "lookalike:bash_search",

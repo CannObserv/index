@@ -312,6 +312,14 @@ def test_the_share_of_codebase_search_passing_include_linked() -> None:
     )
     assert count(r, "codebase_search_linked") == 2
     assert count(r, "index:codebase_search") == 4
+    assert count(r, "codebase_search_linked_share") == 0.5  # CR 13: the issue asks the share
+
+
+def test_no_codebase_search_has_no_share() -> None:
+    assert (
+        "codebase_search_linked_share"
+        not in analyse([index_call("codebase_impact")]).counts[("co-index", "index", "unsplit")]
+    )
 
 
 # --- Bash: searches and filters ----------------------------------------------
