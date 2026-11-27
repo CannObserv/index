@@ -522,7 +522,11 @@ read it with `sudo journalctl -u otelcol-retention -n 5`.
 
 **First install.** Outside a patching window, with `index-inflight.sh` at 0
 (the pull and the start share the host with a client's index run). Qdrant and
-Ollama don't restart: read their `NRestarts` before and after.
+Ollama don't restart: `systemctl show qdrant ollama -p InvocationID` and
+`sudo docker inspect qdrant ollama --format '{{.Name}} {{.State.StartedAt}}'`
+read the same before and after. Not `NRestarts`, which counts only
+`Restart=`'s restarts: a `systemctl restart`, or Docker's, leaves it where it
+was (#53).
 
 ```bash
 sudo docker pull "$(sed -n 's/^  \(otel\/opentelemetry-collector-contrib:.*\)$/\1/p' deploy/otelcol-run.sh)"
