@@ -331,6 +331,13 @@ def _corpus() -> list[tuple[str, dict]]:
     ]
     mcp_calls += [
         _tool_result(MCP, "mcp-no-parameters", tool_input=_json(q=f"{DROP}-no-parameters")),
+        # A map naming SocratiCode: flattened, so not the client's string.
+        _tool_result(
+            MCP,
+            "mcp-structured",
+            tool_parameters={"mcp_server_name": "socraticode", "mcp_tool_name": "codebase_search"},
+            tool_input=_json(q=f"{DROP}-structured-mcp"),
+        ),
         _tool_result(
             MCP,
             "mcp-long",
@@ -735,6 +742,13 @@ def test_an_mcp_call_with_no_parameters_loses_its_input(collector: Collector) ->
     """No server named is not SocratiCode: the match must not error either."""
     attributes = _records(collector)["mcp-no-parameters"]["attributes"]
     assert attributes["tool_name"] == MCP
+    assert "tool_input" not in attributes
+
+
+def test_an_mcp_call_with_structured_parameters_loses_both(collector: Collector) -> None:
+    attributes = _records(collector)["mcp-structured"]["attributes"]
+    assert attributes["tool_name"] == MCP
+    assert not any(key.startswith("tool_parameters") for key in attributes)
     assert "tool_input" not in attributes
 
 
