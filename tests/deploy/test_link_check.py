@@ -488,7 +488,9 @@ def test_a_fresh_cache_that_is_missing_a_listed_repo_is_refreshed(
     _healthy(state)
     repos = _fresh(state)
     del repos["watcher"]
-    _write_cache(tmp_path, fetched=1, attempted=1, repos=repos, raw=f"{base}/raw")
+    # Half an hour after a good fetch: inside the retry gate, which waits
+    # out a failed attempt, never a good one (CR 11).
+    _write_cache(tmp_path, fetched=0.5, attempted=0.5, repos=repos, raw=f"{base}/raw")
     result = _run(tmp_path, base)
     assert (result.returncode, result.stdout) == (0, ""), result.stderr
     assert len(state.fetched()) == len(PUBLIC)
@@ -500,10 +502,22 @@ def test_a_fresh_cache_from_another_base_is_refreshed(
 ) -> None:
     state, base = world
     _healthy(state)
-    _write_cache(tmp_path, 1, 1, _fresh(state), raw="https://raw.example/Other")
+    _write_cache(tmp_path, 0.5, 0.5, _fresh(state), raw="https://raw.example/Other")
     assert _run(tmp_path, base).returncode == 0
     assert len(state.fetched()) == len(PUBLIC)
     assert _cache(tmp_path)["raw"] == f"{base}/raw"
+
+
+def test_a_mismatch_after_a_failed_attempt_waits_out_the_retry_gate(
+    world: tuple[World, str], tmp_path: Path
+) -> None:
+    state, base = world
+    _healthy(state)
+    repos = _fresh(state)
+    del repos["watcher"]
+    _write_cache(tmp_path, fetched=3, attempted=0.5, repos=repos, raw=f"{base}/raw")
+    assert _run(tmp_path, base).returncode == 0
+    assert state.fetched() == []
 
 
 def test_a_repo_the_cache_does_not_hold_yet_is_unknown_not_a_finding(

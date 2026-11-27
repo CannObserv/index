@@ -17,8 +17,9 @@ backslash or a control character); 2 unknown, when Qdrant didn't answer
 itself failed, a refused key or a failed TLS check among it: the check-in
 read the same URL with the same key a moment before.
 
-Public repos' files come from raw.githubusercontent.com, anonymously, at
-most every REFRESH_H hours: the check-in runs every 10 minutes. A refresh
+Public repos' files come from raw.githubusercontent.com, anonymously, every
+REFRESH_H hours (the check-in runs every 10 minutes), or at once when the
+cache doesn't hold the list's public repos or base. A refresh
 that fails is unknown: the old cache stands, all or nothing, and the next
 try waits RETRY_H. No good fetch in STALE_H is the `cache` finding.
 Private repos are hand-listed in cohort.json (D18: no token read) and never
@@ -173,7 +174,10 @@ def _refresh(cohort: dict, cache: dict | None, now: datetime, path: str) -> dict
         matches = set(cache["repos"]) == public and cache.get("raw") == cohort["raw"]
         if matches and fetched is not None and now - fetched < timedelta(hours=REFRESH_H):
             return cache
-        if attempted is not None and now - attempted < timedelta(hours=RETRY_H):
+        # The retry gate waits out a failed attempt only: after a good one,
+        # a mismatch is refetched at once (CR 11).
+        failed = attempted is not None and (fetched is None or attempted > fetched)
+        if failed and now - attempted < timedelta(hours=RETRY_H):
             return cache
     stamp = now.strftime(STAMP)
     try:
