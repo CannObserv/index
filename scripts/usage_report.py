@@ -274,7 +274,7 @@ _RG_LONG_VALUED = {
     "--pre-glob",
     "--ignore-file",
 }
-_HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+_HEREDOC = re.compile(r"(?<!<)<<-?(?!<)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 
 
 def _strip_heredocs(cmd: str) -> str:

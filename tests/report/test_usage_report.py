@@ -331,6 +331,14 @@ def test_a_run_of_operators_still_separates_commands(cmd) -> None:
     assert _found(cmd) == [("grep", "foo", False)]
 
 
+def test_a_here_string_is_no_heredoc() -> None:
+    """CR 2: ``<<<`` took the lines after it for a heredoc's body."""
+    assert _found("grep x <<< foo\ngrep -rn bar .") == [
+        ("grep", "x", False),
+        ("grep", "bar", False),
+    ]
+
+
 def test_grep_flags_are_read() -> None:
     [s] = ur.bash_searches("grep -rnFw 'x: y' .")
     assert s.fixed and s.word
