@@ -94,11 +94,14 @@ def _message(text: str) -> str:
     return "".join("?" if c in '"\\' or not c.isprintable() else c for c in text)
 
 
-def _parse(stamp: object) -> datetime | None:
+def _parse(stamp: object, now: datetime) -> datetime | None:
+    """A stamp, or None when unreadable or ahead of the clock: one that ran
+    ahead and was set back would freeze the cache and hide its staleness."""
     try:
-        return datetime.strptime(str(stamp), STAMP).replace(tzinfo=UTC)
+        when = datetime.strptime(str(stamp), STAMP).replace(tzinfo=UTC)
     except ValueError:
         return None
+    return None if when > now + timedelta(minutes=5) else when
 
 
 def _read_cache(path: str) -> dict | None:
@@ -162,8 +165,8 @@ def _refresh(cohort: dict, cache: dict | None, now: datetime, path: str) -> dict
     """The cache to check against, fetched anew when it's due."""
     public = {e["repo"] for e in cohort["repos"] if not e.get("private")}
     if cache is not None:
-        fetched = _parse(cache.get("fetched_at"))
-        attempted = _parse(cache.get("attempted_at"))
+        fetched = _parse(cache.get("fetched_at"), now)
+        attempted = _parse(cache.get("attempted_at"), now)
         # A cache that isn't the list's -- a repo added or made public, or
         # another base -- is due however fresh, or it reads that repo as one
         # with no file for hours.
@@ -231,7 +234,7 @@ class Store:
 
 def _findings(cohort: dict, cache: dict, now: datetime, store: Store) -> list[tuple[str, str]]:
     found: list[tuple[str, str]] = []
-    fetched = _parse(cache.get("fetched_at"))
+    fetched = _parse(cache.get("fetched_at"), now)
     if fetched is None:
         return [("cache", "no good fetch from GitHub yet")]
     hours = int((now - fetched).total_seconds() // 3600)

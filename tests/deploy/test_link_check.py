@@ -521,6 +521,18 @@ def test_a_repo_the_cache_does_not_hold_yet_is_unknown_not_a_finding(
     assert (result.returncode, result.stdout) == (0, ""), result.stderr
 
 
+def test_a_cache_stamped_in_the_future_is_refreshed(
+    world: tuple[World, str], tmp_path: Path
+) -> None:
+    """CR 6: a clock that ran ahead, then corrected, froze the cache and hid
+    the stale finding until it caught up."""
+    state, base = world
+    _healthy(state)
+    _write_cache(tmp_path, fetched=-72, attempted=-72, repos=_fresh(state), raw=f"{base}/raw")
+    assert _run(tmp_path, base).returncode == 0
+    assert len(state.fetched()) == len(PUBLIC)
+
+
 def test_a_cache_six_hours_old_is_refreshed(world: tuple[World, str], tmp_path: Path) -> None:
     state, base = world
     _healthy(state)
