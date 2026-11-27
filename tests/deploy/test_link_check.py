@@ -783,11 +783,12 @@ def test_a_slow_github_is_a_failed_refresh_within_its_budget(
     state, base = world
     _healthy(state)
     _write_cache(tmp_path, fetched=7, attempted=7, repos={})
+    before = _cache(tmp_path)["fetched_at"]
     state.raw_delay = 3
     code, took = _in_process(tmp_path, base, REFRESH_BUDGET=0.5)
     assert code == 0
     assert took < 2.5
-    assert _cache(tmp_path)["fetched_at"] == _iso(7)
+    assert _cache(tmp_path)["fetched_at"] == before
 
 
 def test_a_slow_qdrant_is_unknown_within_its_budget(
