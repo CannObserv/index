@@ -1178,6 +1178,17 @@ def test_the_sample_for_the_operator_is_seeded_and_unlabelled(tmp_path) -> None:
     assert (out / "label-sample.csv").read_text() == first
 
 
+def test_the_seed_decides_the_draw(tmp_path) -> None:
+    """CR 50: a fixed generator would pass the repeat check above."""
+    lines = export([bash(f"rg -n Foo.b{i}", use_id=f"u{i:02}") for i in range(30)]) + "\n"
+    draws = []
+    for seed in ("1", "2"):
+        out = tmp_path / seed
+        assert _run(lines, "-", "--sample", "5", "--seed", seed, out=out).returncode == 0
+        draws.append([r["tool_use_id"] for r in csv.DictReader((out / "label-sample.csv").open())])
+    assert draws[0] != draws[1]
+
+
 def test_operator_labels_are_read_from_the_data_directory(tmp_path) -> None:
     out = tmp_path / "data"
     out.mkdir(mode=0o700)
