@@ -1256,6 +1256,18 @@ def test_a_rerun_overwrites_a_longer_old_file(tmp_path) -> None:
     assert "xxxx" not in (out / "report.md").read_text()
 
 
+def test_a_rerun_resets_the_modes_a_fresh_directory_never_has(tmp_path) -> None:
+    """CR 49: an existing 0755 directory and 0644 file become 0700 and 0600."""
+    out = tmp_path / "data"
+    out.mkdir()
+    out.chmod(0o755)
+    (out / "report.md").write_text("old")
+    (out / "report.md").chmod(0o644)
+    assert _run(_sample_lines(), "-", out=out).returncode == 0
+    assert stat.S_IMODE(out.stat().st_mode) == 0o700
+    assert stat.S_IMODE((out / "report.md").stat().st_mode) == 0o600
+
+
 def test_no_records_writes_nothing_and_exits_1(tmp_path) -> None:
     out = tmp_path / "data"
     res = _run("", "-", out=out)
