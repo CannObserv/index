@@ -589,6 +589,10 @@ AMBIGUOUS = [
     ("qdrant", {}),
     ("Qdrant", {}),
     ("$PATTERN", {}),
+    # CR 60: shlex drops the quotes, so a lowercase message looks like prose.
+    ("permission denied", {}),
+    ("no such file or directory", {}),
+    ("failed to connect", {}),
     ("how errors|Foo.bar", {}),
     ("auth|Foo.bar", {}),
     ("", {}),

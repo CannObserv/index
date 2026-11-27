@@ -654,6 +654,10 @@ _EXACT_SHAPES = [
 ]
 
 
+_WILDCARD = re.compile(r"\.\*|\.\+|\\s")
+_QUESTION = {"how", "where", "what", "why", "which", "when", "who", "whose"}
+
+
 def _alternatives(pattern: str) -> list[str]:
     p = pattern.strip()
     if p.startswith("(") and p.endswith(")") and p.count("(") == 1:
@@ -683,7 +687,12 @@ def _alt_class(alt: str) -> str:
     words = re.sub(r"\.\*|\.\+|\\s[+*]?|\s+", " ", raw).split()
     if len(words) > 1:
         if all(re.fullmatch(r"[a-z]+", w) for w in words):
-            return "english"
+            # Words joined by a wildcard, or a question, stand in for a concept.
+            # A plain lowercase phrase may be a message quoted exactly (its
+            # quotes are gone by now): the model judges it.
+            if _WILDCARD.search(raw) or _QUESTION & set(words):
+                return "english"
+            return "ambiguous"
         if all(re.fullmatch(r"[A-Za-z0-9]+", w) for w in words):
             return "exact"  # capitals or a number: it quotes a message
         if any(rx.search(raw) for rx in _EXACT_SHAPES):
