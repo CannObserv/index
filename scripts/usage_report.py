@@ -114,7 +114,7 @@ def _attrs(items) -> dict:
 
 def _when(text: str | None, nanos) -> datetime:
     if text:
-        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return _aware(text)
     return datetime.fromtimestamp(int(nanos or 0) / 1e9, tz=UTC)
 
 

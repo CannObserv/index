@@ -255,6 +255,14 @@ def test_a_record_without_a_timestamp_takes_the_export_time_in_utc() -> None:
     assert r.ts.isoformat() == "2025-11-24T16:00:00+00:00"
 
 
+def test_a_timestamp_without_a_zone_is_a_bad_record() -> None:
+    """CR 27: it loaded, then the sort raised TypeError."""
+    naive = tool("Read")
+    naive["event.timestamp"] = "2026-11-28T10:00:00"
+    loaded = ur.load_records([export([naive, tool("Read")])])
+    assert len(loaded.records) == 1 and loaded.bad_records == 1
+
+
 def test_an_unparseable_line_is_counted_and_skipped() -> None:
     loaded = ur.load_records(["{not json", "", export([tool("Read")])])
     assert len(loaded.records) == 1 and loaded.bad_lines == 1
