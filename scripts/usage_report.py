@@ -681,7 +681,8 @@ def classify_glob(pattern: str | None) -> str:
     """A name or extension shape is a path (exact); ``*word*`` stands in for a concept."""
     if not pattern:
         return "exact"
-    base = pattern.rstrip("/").rsplit("/", 1)[-1]
+    segments = [s for s in pattern.split("/") if s and s != "**"]
+    base = segments[-1] if segments else ""
     m = re.fullmatch(r"\*+([A-Za-z]+)\*+(\.[\w{},]+)?", base)
     if not m:
         return "exact"

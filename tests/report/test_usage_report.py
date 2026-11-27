@@ -576,6 +576,8 @@ def test_ambiguous_patterns(pattern, flags) -> None:
         ("tests/**/test_*.py", "exact"),
         ("deploy/otelcol.yaml", "exact"),
         ("**/*auth*", "semantic"),
+        ("**/*auth*/**", "semantic"),  # CR 15: the last segment was **
+        ("src/**", "exact"),
         ("*config*.py", "semantic"),
         ("**/*qdrant*", "ambiguous"),
         (None, "exact"),
