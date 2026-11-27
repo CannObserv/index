@@ -1319,6 +1319,21 @@ def test_a_rerun_resets_the_modes_a_fresh_directory_never_has(tmp_path) -> None:
     assert stat.S_IMODE((out / "report.md").stat().st_mode) == 0o600
 
 
+@pytest.mark.parametrize("case", ["labels", "cohort", "sample", "input"])
+def test_each_usage_error_exits_64_without_a_traceback(tmp_path, case) -> None:
+    """CR 56: four usage errors no test ran."""
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json")
+    args = {
+        "labels": ["-", "--labels", str(tmp_path / "missing.csv")],
+        "cohort": ["-", "--cohort", str(bad)],
+        "sample": ["-", "--sample", "0"],
+        "input": [str(tmp_path / "missing.jsonl")],
+    }[case]
+    res = _run(_sample_lines(), *args, out=tmp_path / "data")
+    assert res.returncode == 64 and "Traceback" not in res.stderr, res.stderr
+
+
 def test_no_records_writes_nothing_and_exits_1(tmp_path) -> None:
     out = tmp_path / "data"
     res = _run("", "-", out=out)
