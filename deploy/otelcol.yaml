@@ -116,7 +116,7 @@ processors:
           # other: Edit, Write and NotebookEdit carry file contents. A record
           # with no tool_name is not "listed". Task is Agent's legacy name.
           # Every MCP call's tool_name is the literal mcp_tool, never
-          # mcp__<server>__<tool> (2.1.309 to 2.1.332, measured 2026-11-27, #54).
+          # mcp__<server>__<tool> (2.1.309, 2.1.330, 2.1.332, measured 2026-11-27, #54).
           - >-
             delete_key(attributes, "tool_input")
             where attributes["tool_name"] == nil
