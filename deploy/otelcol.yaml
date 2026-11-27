@@ -115,19 +115,30 @@ processors:
           # tool_input stays for the tools the report reads, and for no
           # other: Edit, Write and NotebookEdit carry file contents. A record
           # with no tool_name is not "listed". Task is Agent's legacy name.
+          # Every MCP call's tool_name is the literal mcp_tool, never
+          # mcp__<server>__<tool> (2.1.309 to 2.1.332, measured 2026-11-27, #54).
           - >-
             delete_key(attributes, "tool_input")
             where attributes["tool_name"] == nil
-            or not IsMatch(attributes["tool_name"],
-            "^(Grep|Glob|Bash|Read|Agent|Task)$|^mcp__(plugin_socraticode_)?socraticode__")
+            or not IsMatch(attributes["tool_name"], "^(Grep|Glob|Bash|Read|Agent|Task|mcp_tool)$")
+          # An MCP call keeps its arguments only when tool_parameters names
+          # SocratiCode's server, as a plugin or standalone, in exactly the
+          # client's shape: {"mcp_server_name":"…","mcp_tool_name":"…"}.
+          # Any other server, or any other shape, loses them (D21).
+          - >-
+            delete_key(attributes, "tool_input")
+            where attributes["tool_name"] == "mcp_tool"
+            and (attributes["tool_parameters"] == nil
+            or not IsMatch(attributes["tool_parameters"],
+            "^\\{\\x22mcp_server_name\\x22:\\x22(plugin_socraticode_)?socraticode\\x22,\\x22mcp_tool_name\\x22:\\x22[^\\x22\\x5c]*\\x22\\}$"))
           # tool_parameters stays only where Claude Code's documentation
           # fills it: Bash (the command), Agent (its type), Skill (its name)
-          # and MCP tools (server and tool). For any other tool it is empty
+          # and MCP calls (server and tool). For any other tool it is empty
           # today, and whatever a later release puts there isn't kept.
           - >-
             delete_key(attributes, "tool_parameters")
             where attributes["tool_name"] == nil
-            or not IsMatch(attributes["tool_name"], "^(Bash|Agent|Task|Skill)$|^mcp__")
+            or not IsMatch(attributes["tool_name"], "^(Bash|Agent|Task|Skill|mcp_tool)$")
           # Read: the path alone, as {"file_path":"…"}. Any other shape goes.
           - >-
             replace_pattern(attributes["tool_input"],

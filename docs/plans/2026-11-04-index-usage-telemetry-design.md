@@ -72,9 +72,16 @@ it, the only thing that needs watching is a link a repo **declares** in
   `settings.local.json`. They go in each VM's `~/.claude/settings.json` (or
   managed settings). Enabling is a **host step**, done per VM like the stub
   audit, and no commit to a client repo can carry it.
-- **Without `OTEL_LOG_TOOL_DETAILS=1`, every SocratiCode call reports as the
-  literal `mcp_tool`**, and no Grep pattern or Bash command is sent. The flag
-  is required.
+- **Every MCP call reports `tool_name` as the literal `mcp_tool`**, with
+  the flag or without it. `OTEL_LOG_TOOL_DETAILS=1` adds `tool_parameters`,
+  which names the server and the tool (`mcp_server_name`, `mcp_tool_name`),
+  and `tool_input`, the arguments. So a SocratiCode call is told from any
+  other MCP call by its server's name alone. Without the flag, per the
+  monitoring docs, neither is sent, and no Grep pattern or Bash command
+  either. The flag is required. *Corrected 2026-11-27
+  (CannObserv/index#54):* this line said only that the flag's absence made
+  the name `mcp_tool`. With the flag, Claude Code 2.1.309, 2.1.330 and 2.1.332
+  all sent `mcp_tool` too (measured).
 - **Traffic flows one way.** VMs can reach `co-index` over the tailnet;
   `co-index` reaches no VM. Clients push.
 - **Session-triggered reports only.** The model judging ambiguous greps is
@@ -126,7 +133,8 @@ untouched.
     `tool_input_size_bytes`, `prompt.id`, `session.id`, `agent_id`,
     `parent_agent_id`, `mcp_server_scope`), plus `tool_parameters`, and
     `tool_input` **only** for Grep, Glob, Bash, Read (path only), Agent and
-    the SocratiCode MCP tools;
+    the SocratiCode MCP tools (an `mcp_tool` call whose `tool_parameters`
+    names SocratiCode's server);
   - `api_request` events: tokens by type, `cost_usd`, `duration_ms`,
     `model`, `prompt.id`, `session.id`, `agent_id`;
   - `claude_code.active_time.total`;
@@ -159,7 +167,7 @@ OTEL_METRICS_EXPORTER=otlp
 OTEL_METRIC_EXPORT_INTERVAL=300000        # active time only; 5 min is enough
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_EXPORTER_OTLP_ENDPOINT=http://index:4318
-OTEL_LOG_TOOL_DETAILS=1                   # required: else SocratiCode is "mcp_tool"
+OTEL_LOG_TOOL_DETAILS=1                   # required: else no MCP server or tool name
 OTEL_METRICS_INCLUDE_REPOSITORY=true
 OTEL_METRICS_INCLUDE_VERSION=true
 OTEL_RESOURCE_ATTRIBUTES=cohort.host=<vm>

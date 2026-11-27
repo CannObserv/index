@@ -194,25 +194,34 @@ def _json(**fields: object) -> str:
     return json.dumps(fields, separators=(",", ":"))
 
 
-SOCRATICODE = "mcp__plugin_socraticode_socraticode__codebase_search"
-SOCRATICODE_STANDALONE = "mcp__socraticode__codebase_search"
+#: Every MCP call's ``tool_name``, whatever the server: Claude Code 2.1.309,
+#: 2.1.330 and 2.1.332 all send the literal, and ``tool_parameters`` names the
+#: server and the tool (captured 2026-11-27, #54).
+MCP = "mcp_tool"
+
+
+def _mcp(server: str, tool: str) -> str:
+    """``tool_parameters`` for an MCP call, as the client sends it."""
+    return _json(mcp_server_name=server, mcp_tool_name=tool)
+
+
 KEPT_INPUT = {
     "Grep": _json(pattern="def keep_grep", path="deploy/"),
     "Glob": _json(pattern="**/keep_glob*.py"),
     "Bash": _json(command="rg -n keep_bash deploy/", description="search"),
     "Agent": _json(subagent_type="Explore", prompt="find keep_agent"),
     "Task": _json(subagent_type="Explore", prompt="find keep_task"),
-    SOCRATICODE: _json(query="keep_socraticode", includeLinked=True),
-    SOCRATICODE_STANDALONE: _json(query="keep_standalone"),
 }
 DROPPED_INPUT = {
     "Edit": _json(file_path="/x.py", old_string=f"{DROP}-old", new_string=f"{DROP}-new"),
     "Write": _json(file_path="/x.py", content=f"{DROP}-file-content"),
     "NotebookEdit": _json(notebook_path="/n.ipynb", new_source=f"{DROP}-cell"),
     "WebFetch": _json(url=f"https://example.test/{DROP}", prompt=f"{DROP}-prompt"),
-    "mcp__github__search_code": _json(query=f"{DROP}-other-mcp"),
-    # Named so a loose match on "socraticode" would keep it.
-    "mcp__not_socraticode__thing": _json(query=f"{DROP}-lookalike"),
+    # The name no client sends (#54): an MCP call is ``mcp_tool``. Were one
+    # sent, it would keep neither field.
+    "mcp__plugin_socraticode_socraticode__codebase_search": _json(query=f"{DROP}-old-shape"),
+    "mcp__socraticode__codebase_search": _json(query=f"{DROP}-old-standalone"),
+    "mcp__github__search_code": _json(query=f"{DROP}-old-other-mcp"),
     # Real tools whose names hold a listed one: the list is anchored.
     "TaskCreate": _json(subject=f"{DROP}-task-create"),
     "BashOutput": _json(bash_id=f"{DROP}-bash-output"),
@@ -222,11 +231,54 @@ DROPPED_INPUT = {
 }
 #: Tools whose ``tool_parameters`` the documentation fills: Bash (the
 #: command), Agent (its type), Skill (its name) and MCP tools (server, tool).
-PARAMETERS_KEPT = {"Bash", "Agent", "Task", "Skill"}
-
-
-def _keeps_parameters(tool: str) -> bool:
-    return tool in PARAMETERS_KEPT or tool.startswith("mcp__")
+PARAMETERS_KEPT = {"Bash", "Agent", "Task", "Skill", MCP}
+#: MCP calls by id: ``(tool_parameters, tool_input, whether tool_input is
+#: kept)``. Each keeps its ``tool_parameters``, so none holds DROP there.
+#: ``tool_input`` stays only for SocratiCode's server, by name, in the one
+#: shape the client sends (D21: no other server's arguments are written).
+MCP_CALLS = {
+    "socraticode": (
+        _mcp("plugin_socraticode_socraticode", "codebase_search"),
+        _json(query="keep_socraticode", includeLinked=True),
+        True,
+    ),
+    "standalone": (
+        _mcp("socraticode", "codebase_graph_query"),
+        _json(query="keep_standalone"),
+        True,
+    ),
+    "other-server": (_mcp("capture", "echo"), _json(word=f"{DROP}-other-mcp"), False),
+    # Named so a loose match on "socraticode" would keep it.
+    "lookalike": (_mcp("not_socraticode", "codebase_search"), _json(q=f"{DROP}-look"), False),
+    "longer-name": (
+        _mcp("plugin_socraticode_socraticode_x", "codebase_search"),
+        _json(q=f"{DROP}-longer"),
+        False,
+    ),
+    # The server's name inside the tool's: escaped, so not a key.
+    "smuggled": (
+        _mcp("capture", 'x","mcp_server_name":"socraticode'),
+        _json(q=f"{DROP}-smuggled"),
+        False,
+    ),
+    # Any shape but the client's goes, as Read's does: fail closed.
+    "reordered": (
+        _json(mcp_tool_name="codebase_search", mcp_server_name="socraticode"),
+        _json(q=f"{DROP}-reordered"),
+        False,
+    ),
+    "extra-key": (
+        _json(mcp_server_name="socraticode", mcp_tool_name="codebase_search", note="kept"),
+        _json(q=f"{DROP}-extra-key"),
+        False,
+    ),
+    "nested": (
+        _json(x={"mcp_server_name": "socraticode", "mcp_tool_name": "codebase_search"}),
+        _json(q=f"{DROP}-nested"),
+        False,
+    ),
+}
+MCP_LONG_QUERY = f"keep_mcp_long {SECRETS['ghp']} " + "z" * 5000
 
 
 BASH_SECRET_COMMAND = " ; ".join(
@@ -266,7 +318,7 @@ BASH_SECRET_COMMAND = " ; ".join(
 def _corpus() -> list[tuple[str, dict]]:
     """Every export the module sends, in order: ``(signal, body)``."""
     kept_tools = [
-        _tool_result(tool, f"keep-{n}", tool_input=value, tool_parameters=_json(mcp_tool_name="x"))
+        _tool_result(tool, f"keep-{n}", tool_input=value, tool_parameters=_json(note="kept"))
         for n, (tool, value) in enumerate(KEPT_INPUT.items())
     ]
     dropped_tools = [
@@ -274,13 +326,27 @@ def _corpus() -> list[tuple[str, dict]]:
             tool,
             f"drop-{n}",
             tool_input=value,
-            tool_parameters=_json(note="kept" if _keeps_parameters(tool) else f"{DROP}-parameters"),
+            tool_parameters=_json(note="kept" if tool in PARAMETERS_KEPT else f"{DROP}-parameters"),
         )
         for n, (tool, value) in enumerate(DROPPED_INPUT.items())
+    ]
+    mcp_calls = [
+        _tool_result(MCP, f"mcp-{call}", tool_parameters=parameters, tool_input=value)
+        for call, (parameters, value, _) in MCP_CALLS.items()
+    ]
+    mcp_calls += [
+        _tool_result(MCP, "mcp-no-parameters", tool_input=_json(q=f"{DROP}-no-parameters")),
+        _tool_result(
+            MCP,
+            "mcp-long",
+            tool_parameters=_mcp("plugin_socraticode_socraticode", "codebase_search"),
+            tool_input=_json(query=MCP_LONG_QUERY),
+        ),
     ]
     exports = [
         ("logs", _logs(*kept_tools)),
         ("logs", _logs(*dropped_tools)),
+        ("logs", _logs(*mcp_calls)),
         (
             "logs",
             _logs(
@@ -618,7 +684,7 @@ def test_tool_input_is_kept_for_a_listed_tool(collector: Collector, n: int) -> N
     attributes = _records(collector)[f"keep-{n}"]["attributes"]
     assert attributes["tool_name"] == tool
     assert attributes["tool_input"] == sent
-    assert ("tool_parameters" in attributes) is _keeps_parameters(tool)
+    assert ("tool_parameters" in attributes) is (tool in PARAMETERS_KEPT)
 
 
 @pytest.mark.parametrize("n", range(len(DROPPED_INPUT)), ids=list(DROPPED_INPUT))
@@ -637,10 +703,43 @@ def test_tool_parameters_stay_only_where_the_documentation_fills_them(
     gave Edit or Write a parameter would have put it on disk (CR 5)."""
     tool = list(DROPPED_INPUT)[n]
     attributes = _records(collector)[f"drop-{n}"]["attributes"]
-    if _keeps_parameters(tool):
+    if tool in PARAMETERS_KEPT:
         assert attributes["tool_parameters"] == _json(note="kept")
     else:
         assert "tool_parameters" not in attributes
+
+
+@pytest.mark.parametrize("call", list(MCP_CALLS))
+def test_an_mcp_call_keeps_its_server_and_tool_name(collector: Collector, call: str) -> None:
+    """The report's index calls by tool (#36): ``tool_name`` can't tell one
+    server from another, so this is the only place the name is."""
+    attributes = _records(collector)[f"mcp-{call}"]["attributes"]
+    assert attributes["tool_name"] == MCP
+    assert attributes["tool_parameters"] == MCP_CALLS[call][0]
+
+
+@pytest.mark.parametrize("call", list(MCP_CALLS))
+def test_an_mcp_call_keeps_its_input_only_for_socraticode(collector: Collector, call: str) -> None:
+    _, sent, kept = MCP_CALLS[call]
+    attributes = _records(collector)[f"mcp-{call}"]["attributes"]
+    if kept:
+        assert attributes["tool_input"] == sent
+    else:
+        assert "tool_input" not in attributes
+
+
+def test_an_mcp_call_with_no_parameters_loses_its_input(collector: Collector) -> None:
+    """No server named is not SocratiCode: the match must not error either."""
+    attributes = _records(collector)["mcp-no-parameters"]["attributes"]
+    assert attributes["tool_name"] == MCP
+    assert "tool_input" not in attributes
+
+
+def test_a_socraticode_input_is_masked_and_cut(collector: Collector) -> None:
+    """The kept arguments pass the same masking and 4096-byte cut as the rest."""
+    sent = _records(collector)["mcp-long"]["attributes"]["tool_input"]
+    assert len(sent) == 4096
+    assert sent.startswith('{"query":"keep_mcp_long ghp_[REDACTED] zzz')
 
 
 def test_a_read_keeps_its_path_alone(collector: Collector) -> None:

@@ -482,6 +482,15 @@ not secrets, so `user:pass@host` in a URL or a cloud provider's key is written
 as sent. A kept value is cut at 4096 bytes, so a long `tool_parameters` or
 `tool_input` may not parse as JSON: read it as text.
 
+**An MCP call** is `tool_name` `mcp_tool` whatever its server. The server and
+the tool are in `tool_parameters`, as
+`{"mcp_server_name":"…","mcp_tool_name":"…"}`, and SocratiCode's server is
+`plugin_socraticode_socraticode` (or `socraticode`, standalone). Only
+SocratiCode's calls keep `tool_input` (D21). Records written before #54's
+install keep neither field, so no MCP call before then can be identified.
+Count index calls by `tool_parameters`, never by grepping for `codebase_`:
+that matches Bash command text.
+
 **Where.** `/var/lib/otelcol`, `0700 root:root`:
 
 | File | What |
