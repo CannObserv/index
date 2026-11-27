@@ -59,6 +59,9 @@ class World:
         self.collections: dict[str, int] = {}
         self.qdrant_status: int | None = None
         self.raw_status: int | None = None
+        # "short": a Content-Length the body falls short of; "garbage": no HTTP at all
+        self.raw_broken: dict[str, str] = {}
+        self.qdrant_garbage = False
         self.requests: list[tuple[str, str, str]] = []
 
     def config(self, repo: str, project_id: str | None = None, links: list[str] | None = None):
@@ -91,6 +94,9 @@ def world() -> Iterator[tuple[World, str]]:
 
         def _qdrant(self) -> bool:
             """False when the request is refused, having answered it."""
+            if state.qdrant_garbage:
+                self.wfile.write(b"not http\r\n\r\n")
+                return False
             if self.headers.get("api-key") != KEY:
                 self._send(401, '{"status":{"error":"Must provide an API key"}}')
                 return False
@@ -105,6 +111,15 @@ def world() -> Iterator[tuple[World, str]]:
                 repo, ref, name = self.path.removeprefix("/raw/").split("/", 2)
                 assert (ref, name) == ("HEAD", ".socraticode.json"), self.path
                 assert "Authorization" not in self.headers, "fetched with a credential"
+                if state.raw_broken.get(repo) == "garbage":
+                    self.wfile.write(b"not http\r\n\r\n")
+                    return
+                if state.raw_broken.get(repo) == "short":
+                    self.send_response(200)
+                    self.send_header("Content-Length", "100")
+                    self.end_headers()
+                    self.wfile.write(b'{"projectId"')
+                    return
                 if state.raw_status is not None:
                     self._send(state.raw_status, "")
                     return
@@ -349,8 +364,13 @@ def test_a_projectid_that_is_no_collection_name_is_a_finding(
 
 @pytest.mark.parametrize(
     "body",
-    ["{not json", '{"projectId":"status","linkedProjects":"../notifier"}', '["status"]'],
-    ids=["not JSON", "links not a list", "not an object"],
+    [
+        "{not json",
+        '{"projectId":"status","linkedProjects":"../notifier"}',
+        '["status"]',
+        '{"projectId":"status","pad":"' + "x" * 70_000 + '"}',
+    ],
+    ids=["not JSON", "links not a list", "not an object", "over 64 KiB"],
 )
 def test_an_unreadable_config_is_a_finding_on_its_repo(
     world: tuple[World, str], tmp_path: Path, body: str
@@ -453,6 +473,25 @@ def test_a_failed_refresh_keeps_the_old_cache_and_is_no_finding(
     before = _cache(tmp_path)
     state.config("watcher", "renamed", ["../notifier"])  # would be a finding if read
     state.raw_status = status
+    result = _run(tmp_path, base)
+    assert (result.returncode, result.stdout) == (0, ""), result.stderr
+    after = _cache(tmp_path)
+    assert (after["fetched_at"], after["repos"]) == (before["fetched_at"], before["repos"])
+    assert after["attempted_at"] > before["attempted_at"]
+
+
+@pytest.mark.parametrize("broken", ["short", "garbage"])
+def test_a_broken_answer_from_github_is_a_failed_refresh(
+    world: tuple[World, str], tmp_path: Path, broken: str
+) -> None:
+    """CR 1: a body cut short read as "not JSON", cached for 6 hours as a
+    finding on every repo. A reply that isn't HTTP escaped as exit 3, and
+    skipped the attempt's stamp, so every tick fetched again (CR 5)."""
+    state, base = world
+    _healthy(state)
+    _write_cache(tmp_path, fetched=7, attempted=7, repos={"status": None})
+    before = _cache(tmp_path)
+    state.raw_broken["watcher"] = broken
     result = _run(tmp_path, base)
     assert (result.returncode, result.stdout) == (0, ""), result.stderr
     after = _cache(tmp_path)

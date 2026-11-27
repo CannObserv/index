@@ -24,6 +24,7 @@ Private repos are hand-listed in cohort.json (D18: no token read) and never
 fetched. Stdlib only.
 """
 
+import http.client
 import json
 import os
 import posixpath
@@ -103,12 +104,17 @@ def _fetch(raw: str, repo: str) -> dict | None:
     try:
         with urllib.request.urlopen(req, timeout=RAW_TIMEOUT) as r:
             body = r.read(MAX_BYTES + 1)
+            # A read stops short at a closed connection without raising: what
+            # it left unread is a broken fetch, never a file that isn't JSON.
+            if len(body) <= MAX_BYTES and r.length:
+                raise RefreshFailed(f"{repo}: body cut short, {r.length} bytes unread")
     except urllib.error.HTTPError as e:
         if e.code == 404:
             return None
         raise RefreshFailed(f"{repo}: HTTP {e.code}") from e
-    except (OSError, ValueError) as e:
-        raise RefreshFailed(f"{repo}: {e}") from e
+    # HTTPException (IncompleteRead, BadStatusLine) is no OSError.
+    except (OSError, ValueError, http.client.HTTPException) as e:
+        raise RefreshFailed(f"{repo}: {type(e).__name__}: {e}") from e
     if len(body) > MAX_BYTES:
         return {"invalid": "is over 64 KiB"}
     try:
