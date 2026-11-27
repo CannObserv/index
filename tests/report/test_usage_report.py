@@ -945,6 +945,25 @@ def test_a_label_file_saved_with_a_bom_is_read(tmp_path) -> None:
     assert ur.read_labels(path) == {"t1": "exact"}
 
 
+def _no_id(rec: dict) -> dict:
+    rec["tool_use_id"] = ""
+    return rec
+
+
+def test_a_call_without_a_tool_use_id_is_never_labelled_or_sampled(tmp_path) -> None:
+    """CR 32: every such call shared the key "", so a label graded the wrong one."""
+    path = tmp_path / "l.csv"
+    path.write_text("tool_use_id,label\n,exact\n  ,semantic\nt1,exact\n")
+    assert ur.read_labels(path) == {"t1": "exact"}
+    r = analyse([_no_id(bash("rg -n Foo.bar")), _no_id(bash("rg -n auth"))], labels={"": "exact"})
+    assert r.agreement.n == 0 and r.agreement.unmatched == 1
+    out = tmp_path / "data"
+    lines = export([_no_id(bash("rg -n Foo.bar")), bash("rg -n x.y", use_id="k")]) + "\n"
+    assert _run(lines, "-", "--sample", "5", out=out).returncode == 0
+    ids = [row["tool_use_id"] for row in csv.DictReader((out / "label-sample.csv").open())]
+    assert ids == ["k"]
+
+
 def test_label_files_take_only_exact_or_semantic(tmp_path) -> None:
     path = tmp_path / "l.csv"
     path.write_text("tool_use_id,label,extra\nt1,exact,x\nt2, Semantic ,y\nt3,,z\n")

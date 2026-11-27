@@ -1074,7 +1074,7 @@ def analyse(
 
     agreement = Agreement(threshold=threshold)
     if labels:
-        by_id = {c.use_id: c for c in calls if c.kind == "grep_like"}
+        by_id = {c.use_id: c for c in calls if c.kind == "grep_like" and c.use_id}
         for use_id, label in labels.items():
             call = by_id.get(use_id)
             if call is None:
@@ -1120,7 +1120,7 @@ def read_labels(path: Path) -> dict:
             out = {}
             for row in reader:
                 label = (row.get("label") or "").strip().lower()
-                if not label:
+                if not label or not (row.get("tool_use_id") or "").strip():
                     continue
                 if label not in LABELS:
                     raise Usage(f"{path}: label {label!r} is not exact or semantic")
@@ -1421,7 +1421,9 @@ def main(argv: list[str]) -> int:
     )
     sample_rows = None
     if args.sample is not None:
-        pool = sorted((c for c in result.calls if c.kind == "grep_like"), key=lambda c: c.use_id)
+        pool = sorted(
+            (c for c in result.calls if c.kind == "grep_like" and c.use_id), key=lambda c: c.use_id
+        )
         sample_rows = random.Random(args.seed).sample(pool, min(args.sample, len(pool)))
     try:
         write_report(args.out, loaded, result, args, sample_rows)
