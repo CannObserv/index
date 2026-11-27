@@ -197,7 +197,7 @@ class Store:
                 if e.code != 404:
                     raise Unknown(f"{collection}: HTTP {e.code}") from e
                 self.counts[collection] = None
-            except (OSError, ValueError, KeyError, TypeError) as e:
+            except (OSError, ValueError, KeyError, TypeError, http.client.HTTPException) as e:
                 reason = getattr(e, "reason", e)
                 if isinstance(reason, ssl.SSLError):
                     raise Broken(f"{collection}: {reason!r}") from e

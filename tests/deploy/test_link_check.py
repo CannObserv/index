@@ -648,6 +648,17 @@ def test_qdrant_not_answering_is_unknown(
     assert (result.returncode, result.stdout) == (2, "")
 
 
+def test_a_qdrant_reply_that_is_not_http_is_unknown(
+    world: tuple[World, str], tmp_path: Path
+) -> None:
+    """CR 5: BadStatusLine is no OSError, and escaped as the check broken."""
+    state, base = world
+    _healthy(state)
+    state.qdrant_garbage = True
+    result = _run(tmp_path, base)
+    assert (result.returncode, result.stdout) == (2, ""), result.stderr
+
+
 def test_a_refused_qdrant_is_unknown(world: tuple[World, str], tmp_path: Path) -> None:
     state, base = world
     _healthy(state)
