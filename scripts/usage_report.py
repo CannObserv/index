@@ -727,6 +727,10 @@ class Call:
 
 
 def _mcp(rec: Record) -> tuple[str, str | None]:
+    # The key order is deliberate: #54's keep rule writes tool_parameters only
+    # in the client's shape, these two keys in this order, and deletes any
+    # other. So a reordered record can't reach the disk; matching it here
+    # would only disagree with the collector.
     params = _json(rec.get("tool_parameters"))
     if (
         isinstance(params, dict)
