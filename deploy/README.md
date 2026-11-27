@@ -522,7 +522,7 @@ read it with `sudo journalctl -u otelcol-retention -n 5`.
 
 **First install.** Outside a patching window, with `index-inflight.sh` at 0
 (the pull and the start share the host with a client's index run). Qdrant and
-Ollama don't restart: `systemctl show qdrant ollama -p InvocationID` and
+Ollama don't restart: `systemctl show qdrant ollama -p Id -p InvocationID` and
 `sudo docker inspect qdrant ollama --format '{{.Name}} {{.State.StartedAt}}'`
 read the same before and after. Not `NRestarts`, which counts only
 `Restart=`'s restarts: an explicit start, a `systemctl restart` or Docker's,
