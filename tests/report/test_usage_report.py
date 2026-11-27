@@ -229,6 +229,25 @@ def test_two_records_sharing_a_sequence_number_are_both_kept() -> None:
     assert len(loaded.records) == 4 and loaded.duplicates == 0
 
 
+def test_one_bad_record_is_counted_and_the_rest_are_read() -> None:
+    """CR 6: a bad timestamp or sequence raised, and the run died."""
+    bad_ts, bad_seq = tool("Read"), tool("Read")
+    bad_ts["event.timestamp"] = "garbage"
+    bad_seq["event.sequence"] = "x"
+    lines = [export([bad_ts, tool("Read"), bad_seq]), '{"resourceLogs": 5}']
+    loaded = ur.load_records(lines)
+    assert len(loaded.records) == 1
+    assert loaded.bad_records == 2 and loaded.bad_lines == 1
+
+
+def test_a_record_without_a_timestamp_takes_the_export_time_in_utc() -> None:
+    rec = tool("Read")
+    rec["event.timestamp"] = None
+    line = export([rec]).replace('"timeUnixNano": "0"', '"timeUnixNano": "1764000000000000000"')
+    [r] = ur.load_records([line]).records
+    assert r.ts.isoformat() == "2025-11-24T16:00:00+00:00"
+
+
 def test_an_unparseable_line_is_counted_and_skipped() -> None:
     loaded = ur.load_records(["{not json", "", export([tool("Read")])])
     assert len(loaded.records) == 1 and loaded.bad_lines == 1

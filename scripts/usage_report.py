@@ -41,7 +41,7 @@ import statistics
 import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -93,6 +93,7 @@ class Loaded:
     records: list[Record] = field(default_factory=list)
     lines: int = 0
     bad_lines: int = 0
+    bad_records: int = 0
     excluded: int = 0
     duplicates: int = 0
 
@@ -111,7 +112,7 @@ def _attrs(items) -> dict:
 def _when(text: str | None, nanos) -> datetime:
     if text:
         return datetime.fromisoformat(text.replace("Z", "+00:00"))
-    return datetime.fromtimestamp(int(nanos or 0) / 1e9).astimezone()
+    return datetime.fromtimestamp(int(nanos or 0) / 1e9, tz=UTC)
 
 
 def load_records(lines) -> Loaded:
@@ -125,6 +126,8 @@ def load_records(lines) -> Loaded:
         try:
             doc = json.loads(line)
             resource_logs = doc["resourceLogs"]
+            if not isinstance(resource_logs, list):
+                raise TypeError("resourceLogs is no list")
         except (ValueError, KeyError, TypeError):
             out.bad_lines += 1
             continue
@@ -155,9 +158,8 @@ def load_records(lines) -> Loaded:
                     if key in seen:
                         out.duplicates += 1
                         continue
-                    seen.add(key)
-                    out.records.append(
-                        Record(
+                    try:
+                        record = Record(
                             event=event,
                             host=str(
                                 resource.get("cohort.host") or attrs.get("cohort.host") or "?"
@@ -169,7 +171,11 @@ def load_records(lines) -> Loaded:
                             ts=_when(attrs.get("event.timestamp"), lr.get("timeUnixNano")),
                             attrs=attrs,
                         )
-                    )
+                    except (ValueError, TypeError):
+                        out.bad_records += 1
+                        continue
+                    seen.add(key)
+                    out.records.append(record)
     return out
 
 
@@ -1163,7 +1169,8 @@ def write_report(out: Path, loaded: Loaded, result: Analysis, args, sample_rows)
         f"Records: {len(loaded.records)} ({sum(r.event == 'tool_result' for r in loaded.records)} "
         f"tool_result, {sum(r.event == 'api_request' for r in loaded.records)} api_request), "
         f"{first:%Y-%m-%dT%H:%MZ} to {last:%Y-%m-%dT%H:%MZ}. Lines {loaded.lines}, "
-        f"unparseable {loaded.bad_lines}, duplicates dropped {loaded.duplicates}, "
+        f"unparseable {loaded.bad_lines}, bad records {loaded.bad_records}, "
+        f"duplicates dropped {loaded.duplicates}, "
         f"excluded (proof sessions) {loaded.excluded}."
     )
     md += ["", "## Counts", ""]
