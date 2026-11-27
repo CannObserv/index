@@ -1247,6 +1247,15 @@ def test_it_refuses_to_run_as_root(tmp_path, monkeypatch, capsys) -> None:
     assert not out.exists()
 
 
+def test_a_rerun_overwrites_a_longer_old_file(tmp_path) -> None:
+    """CR 48: without truncation, old bytes would outlive a shorter rewrite."""
+    out = tmp_path / "data"
+    out.mkdir(mode=0o700)
+    (out / "report.md").write_text("x" * 100_000)
+    assert _run(_sample_lines(), "-", out=out).returncode == 0
+    assert "xxxx" not in (out / "report.md").read_text()
+
+
 def test_no_records_writes_nothing_and_exits_1(tmp_path) -> None:
     out = tmp_path / "data"
     res = _run("", "-", out=out)
